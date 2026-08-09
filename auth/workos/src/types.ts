@@ -8,7 +8,7 @@ import type {
   MastraFGAPermission,
   MastraFGAPermissionInput,
   RoleMapping,
-} from '@internal/auth/ee';
+} from '@internal/auth/authorization';
 import type { JwtPayload } from '@mastra/auth';
 import type { User, OrganizationMembership } from '@workos-inc/node';
 
@@ -261,7 +261,7 @@ export type MastraFGAPermissionMapping = Partial<Record<MastraFGAPermission, str
  *
  * @example
  * ```typescript
- * import { MastraFGAPermissions } from '@internal/auth/ee';
+ * import { MastraFGAPermissions } from '@internal/auth/authorization';
  *
  * new MastraFGAWorkos({
  *   resourceMapping: {

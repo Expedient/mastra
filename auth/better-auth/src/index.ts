@@ -7,7 +7,7 @@ import type {
   IUserProvider,
   CredentialsResult,
 } from '@internal/auth';
-import type { EEUser } from '@internal/auth/ee';
+import type { EEUser } from '@internal/auth/authorization';
 import type { MastraAuthProviderOptions } from '@internal/auth/provider';
 import { MastraAuthProvider } from '@internal/auth/provider';
 import { LibsqlDialect } from '@libsql/kysely-libsql';

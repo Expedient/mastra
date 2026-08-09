@@ -5,8 +5,8 @@
  * using configurable role-to-permission mappings.
  */
 
-import type { IRBACProvider, RoleMapping } from '@internal/auth/ee';
-import { resolvePermissionsFromMapping, matchesPermission } from '@internal/auth/ee';
+import type { IRBACProvider, RoleMapping } from '@internal/auth/authorization';
+import { resolvePermissionsFromMapping, matchesPermission } from '@internal/auth/authorization';
 
 import type { CloudUser } from '../types';
 
