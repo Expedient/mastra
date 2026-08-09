@@ -44,16 +44,6 @@
         "default": "./dist/domains/*.cjs.js"
       }
     },
-    "./ee/*": {
-      "import": {
-        "types": "./dist/ee/*.d.ts",
-        "default": "./dist/ee/*.es.js"
-      },
-      "require": {
-        "types": "./dist/ee/*.d.ts",
-        "default": "./dist/ee/*.cjs.js"
-      }
-    },
     "./primitives/*": {
       "import": {
         "types": "./dist/primitives/*.d.ts",
