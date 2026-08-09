@@ -1,5 +1,4 @@
 import type { Agent } from '../agent';
-import type { AgentBuilderOptions, IAgentBuilder } from '../agent-builder/ee';
 import type { MastraBrowser } from '../browser/browser';
 import type { MastraScorer } from '../evals';
 import type { IMastraLogger } from '../logger';
@@ -205,11 +204,6 @@ export interface MastraEditorConfig {
    * @example { [myCloudProvider.id]: myCloudProvider }
    */
   workspaces?: Record<string, WorkspaceProvider>;
-  /**
-   * Configuration for the Agent Builder EE feature.
-   * When present and enabled, the editor provides agent building capabilities.
-   */
-  builder?: AgentBuilderOptions;
   /**
    * Source of truth for agent overrides — controls how they are persisted and
    * surfaced in Studio.
@@ -481,21 +475,6 @@ export interface IMastraEditor {
   getProcessorProvider(id: string): ProcessorProvider | undefined;
   /** List all registered processor providers */
   getProcessorProviders(): Record<string, ProcessorProvider>;
-
-  /**
-   * Check if the builder config is present and enabled.
-   * Sync. OSS-safe. Does NOT import @mastra/editor/ee.
-   * Optional for backwards compatibility.
-   */
-  hasEnabledBuilderConfig?(): boolean;
-
-  /**
-   * Resolve and return the Agent Builder instance.
-   * Dynamic-imports @mastra/editor/ee on first call.
-   * Returns undefined if builder is not configured or disabled.
-   * Optional for backwards compatibility.
-   */
-  resolveBuilder?(): Promise<IAgentBuilder | undefined>;
 
   /**
    * Returns the editor's configured source (`'code'` | `'db'`), or `undefined`

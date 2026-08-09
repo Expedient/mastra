@@ -88,7 +88,6 @@ export default defineConfig({
     'src/agent/durable/index.ts',
     'src/auth/ee/index.ts',
     'src/auth/ee/fga-check.ts',
-    'src/agent-builder/ee/index.ts',
     'src/storage/domains/agents/index.ts',
     'src/storage/domains/mcp-clients/index.ts',
     'src/storage/domains/mcp-servers/index.ts',
