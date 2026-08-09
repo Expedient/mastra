@@ -14,7 +14,7 @@ import {
 import type { SchemaCompatLayer } from '@mastra/schema-compat';
 import type { JSONSchema7Definition } from 'json-schema';
 import { z } from 'zod/v4';
-import { MastraFGAPermissions } from '../../auth/ee';
+import { MastraFGAPermissions } from '../../auth/authorization';
 import { backgroundOverrideJsonSchema, backgroundOverrideZodSchema } from '../../background-tasks';
 import { MastraBase } from '../../base';
 import { ErrorCategory, MastraError, ErrorDomain } from '../../error';
@@ -827,7 +827,7 @@ export class CoreToolBuilder extends MastraBase {
       const user = toolRequestContext?.get('user');
       if (fgaProvider) {
         const { getAgentToolFGAResourceId, getMCPToolFGAResourceId, getStandaloneToolFGAResourceId, requireFGA } =
-          await import('../../auth/ee/fga-check');
+          await import('../../auth/authorization');
         const toolResourceId = mcpMeta?.serverName
           ? getMCPToolFGAResourceId(mcpMeta.serverName, options.name)
           : options.agentId

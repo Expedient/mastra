@@ -77,7 +77,7 @@ RBAC lets you control what each user can see and do inside Studio. It's separate
 
 ### Default roles
 
-Mastra includes four default roles. Import them from `@mastra/core/auth/ee`:
+Mastra includes four default roles. Import them from `@mastra/core/auth/authorization`:
 
 | Role | Permissions |
 | - | - |
@@ -93,7 +93,7 @@ Use `StaticRBACProvider` with the default roles or define your own:
 ```typescript title="src/mastra/index.ts"
 import { Mastra } from '@mastra/core'
 import { SimpleAuth } from '@mastra/core/server'
-import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/ee'
+import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/authorization'
 
 export const mastra = new Mastra({
   server: {
@@ -132,7 +132,7 @@ Resources include `agents`, `workflows`, `tools`, `datasets`, `memory`, `scores`
 If your identity provider already defines roles (for example, Clerk organizations or WorkOS groups), map them to Mastra permissions with `roleMapping`:
 
 ```typescript title="src/mastra/index.ts"
-import { StaticRBACProvider } from '@mastra/core/auth/ee'
+import { StaticRBACProvider } from '@mastra/core/auth/authorization'
 
 const rbac = new StaticRBACProvider({
   roleMapping: {

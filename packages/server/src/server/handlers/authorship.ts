@@ -1,4 +1,4 @@
-import { matchesPermission } from '@mastra/core/auth/ee';
+import { matchesPermission } from '@mastra/core/auth/authorization';
 import type { RequestContext } from '@mastra/core/di';
 
 import { MASTRA_RESOURCE_ID_KEY, MASTRA_USER_KEY, MASTRA_USER_PERMISSIONS_KEY } from '../constants';

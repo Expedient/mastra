@@ -15,7 +15,7 @@ import type {
   ICredentialsProvider,
   SSOCallbackResult,
 } from '@mastra/core/auth';
-import type { IRBACProvider, IFGAProvider, EEUser } from '@mastra/core/auth/ee';
+import type { IRBACProvider, IFGAProvider, EEUser } from '@mastra/core/auth/authorization';
 import type { IMastraAuthProvider } from '@mastra/core/server';
 
 import { z } from 'zod/v4';
@@ -43,11 +43,11 @@ type BuildCapabilitiesFn = (
 let _buildCapabilitiesPromise: Promise<BuildCapabilitiesFn | undefined> | undefined;
 function loadBuildCapabilities(): Promise<BuildCapabilitiesFn | undefined> {
   if (!_buildCapabilitiesPromise) {
-    _buildCapabilitiesPromise = import('@mastra/core/auth/ee')
+    _buildCapabilitiesPromise = import('@mastra/core/auth/authorization')
       .then(m => m.buildCapabilities as BuildCapabilitiesFn)
       .catch(() => {
         console.error(
-          '[@mastra/server] EE auth features require @mastra/core >= 1.6.0. Please upgrade: npm install @mastra/core@latest',
+          '[@mastra/server] Auth capabilities require a compatible @mastra/core. Please upgrade: npm install @mastra/core@latest',
         );
         return undefined;
       });
@@ -58,11 +58,11 @@ function loadBuildCapabilities(): Promise<BuildCapabilitiesFn | undefined> {
 let _permissionPatternsPromise: Promise<Record<string, unknown> | undefined> | undefined;
 function loadPermissionPatterns(): Promise<Record<string, unknown> | undefined> {
   if (!_permissionPatternsPromise) {
-    _permissionPatternsPromise = import('@mastra/core/auth/ee')
+    _permissionPatternsPromise = import('@mastra/core/auth/authorization')
       .then(m => m.PERMISSION_PATTERNS as Record<string, unknown>)
       .catch(() => {
         console.error(
-          '[@mastra/server] EE auth features require @mastra/core >= 1.6.0. Please upgrade: npm install @mastra/core@latest',
+          '[@mastra/server] Permission patterns require a compatible @mastra/core. Please upgrade: npm install @mastra/core@latest',
         );
         return undefined;
       });
@@ -233,6 +233,7 @@ export const GET_AUTH_CAPABILITIES_ROUTE = createPublicRoute({
                 refreshedRequest.headers.set('Cookie', cookieValue);
                 const refreshedCapabilities = await buildCapabilities(auth, refreshedRequest, {
                   rbac,
+                  fga,
                   apiPrefix: routePrefix,
                 });
 

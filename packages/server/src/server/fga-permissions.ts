@@ -1,13 +1,11 @@
 /**
- * Safe re-export of `MastraFGAPermissions` from `@mastra/core/auth/ee`.
+ * Safe re-export of `MastraFGAPermissions` from `@mastra/core/auth/authorization`.
  *
  * Why this shim exists:
- * `MastraFGAPermissions` was introduced in `@mastra/core@1.32.0`. Earlier
- * versions of `@mastra/core` ship `@mastra/core/auth/ee` but do not export
- * this constant. A direct named import (`import { MastraFGAPermissions }
- * from '@mastra/core/auth/ee'`) fails at ESM link time when this version
- * of `@mastra/server` is paired with `@mastra/core < 1.32.0`, taking the
- * entire user bundle down before any code runs.
+ * Some versions of `@mastra/core` do not export this constant from the
+ * authorization compatibility subpath. A direct named import fails at ESM
+ * link time when the export is missing, taking the entire user bundle down
+ * before any code runs.
  *
  * A namespace import tolerates missing names — `ns.MissingExport` is just
  * `undefined`, no link-time error. We then expose the permission map.
@@ -24,11 +22,11 @@
  * `agents:execute`), breaking RBAC users who upgrade `@mastra/server`
  * but stay on `@mastra/core@1.31.0`.
  *
- * Once the consuming `@mastra/core` is on `1.32.0+` the values are real
- * and behaviour is identical to a direct named import.
+ * When the consuming `@mastra/core` exports the permission map, the values are
+ * real and behaviour is identical to a direct named import.
  */
 
-import * as authEE from '@mastra/core/auth/ee';
+import * as authEE from '@mastra/core/auth/authorization';
 
 // Canonical strings for the FGA permission keys actually referenced by
 // `@mastra/server` source. Mirrors `MastraFGAPermissions` in

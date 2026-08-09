@@ -1,4 +1,4 @@
-import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/ee';
+import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/authorization';
 
 import { MASTRA_RESOURCE_ID_KEY } from '../../constants';
 import { getEffectivePermission } from './permissions';

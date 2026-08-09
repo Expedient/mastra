@@ -1,4 +1,4 @@
-import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/ee';
+import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/authorization';
 import type { ValidationErrorHook } from '@mastra/core/server';
 import type { ZodRawShape, ZodTypeAny } from 'zod/v4';
 import { z, ZodObject, ZodOptional, ZodNullable, ZodArray, ZodRecord } from 'zod/v4';

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ActorSignal } from '@mastra/core/auth/ee';
+import type { ActorSignal } from '@mastra/core/auth/authorization';
 import type { RequestContext } from '@mastra/core/di';
 import { getErrorFromUnknown, MastraNonRetryableError } from '@mastra/core/error';
 import type { SerializedError } from '@mastra/core/error';

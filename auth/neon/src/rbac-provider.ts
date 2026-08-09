@@ -5,8 +5,8 @@
  * to Mastra permissions using a configurable role mapping.
  */
 
-import type { IRBACProvider, RoleMapping } from '@mastra/core/auth/ee';
-import { resolvePermissionsFromMapping, matchesPermission } from '@mastra/core/auth/ee';
+import type { IRBACProvider, RoleMapping } from '@mastra/core/auth/authorization';
+import { resolvePermissionsFromMapping, matchesPermission } from '@mastra/core/auth/authorization';
 
 import type { NeonAuthUser } from './index';
 

@@ -4,8 +4,8 @@
 import { MockLanguageModelV2 } from '@internal/ai-sdk-v5/test';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { FGADeniedError } from '../../auth/ee/fga-check';
-import type { IFGAProvider } from '../../auth/ee/interfaces/fga';
+import { FGADeniedError } from '../../auth/authorization';
+import type { IFGAProvider } from '../../auth/authorization';
 import { EventEmitterPubSub } from '../../events';
 import { Mastra } from '../../mastra';
 import { RequestContext } from '../../request-context';

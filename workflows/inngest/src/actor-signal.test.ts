@@ -1,4 +1,4 @@
-import type { ActorSignal } from '@mastra/core/auth/ee';
+import type { ActorSignal } from '@mastra/core/auth/authorization';
 import { Mastra } from '@mastra/core/mastra';
 import { RequestContext } from '@mastra/core/request-context';
 import { MockStore } from '@mastra/core/storage';

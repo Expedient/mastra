@@ -2,8 +2,8 @@
  * Better Auth provider - Credentials-based authentication with SQLite.
  */
 
-import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/ee';
-import type { EEUser } from '@mastra/core/auth/ee';
+import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/authorization';
+import type { EEUser } from '@mastra/core/auth/authorization';
 
 import type { AuthResult } from './types';
 

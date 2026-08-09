@@ -16,8 +16,12 @@ For concepts, configuration, and the lifecycle points where Mastra enforces FGA,
 The following example implements a minimal provider. `require` throws to deny, and `check` returns a boolean.
 
 ```typescript title="src/mastra/fga.ts"
-import { FGADeniedError } from '@mastra/core/auth/ee'
-import type { FGACheckParams, IFGAProvider, MastraFGAPermissionInput } from '@mastra/core/auth/ee'
+import { FGADeniedError } from '@mastra/core/auth/authorization'
+import type {
+  FGACheckParams,
+  IFGAProvider,
+  MastraFGAPermissionInput,
+} from '@mastra/core/auth/authorization'
 
 class MyFGAProvider implements IFGAProvider {
   async check(user: any, params: FGACheckParams): Promise<boolean> {
@@ -71,8 +75,8 @@ System actors skip the user-centric `require()` path, so implement `requireActor
 Treat `actor.permissions` as an untrusted claim. Resolve the agent's authoritative grants from a trusted source keyed by `actor.agentId`, rather than trusting the inline values. See [System actors](/docs/server/auth/fga#system-actors).
 
 ```typescript
-import { FGADeniedError } from '@mastra/core/auth/ee'
-import type { ActorSignal, FGACheckParams, IFGAProvider } from '@mastra/core/auth/ee'
+import { FGADeniedError } from '@mastra/core/auth/authorization'
+import type { ActorSignal, FGACheckParams, IFGAProvider } from '@mastra/core/auth/authorization'
 
 class MyFGAProvider implements IFGAProvider {
   // ...check, require, filterAccessible...
@@ -202,7 +206,7 @@ Identifies a call made by a trusted non-user actor rather than an authenticated 
 Thrown when an authorization check is denied. `require` and `requireActor` throw it to deny, and Mastra surfaces it as an HTTP `403`.
 
 ```typescript
-import { FGADeniedError } from '@mastra/core/auth/ee'
+import { FGADeniedError } from '@mastra/core/auth/authorization'
 
 throw new FGADeniedError(user, { type: 'agent', id: 'reporter' }, 'agents:execute')
 // Optional fourth argument: a reason string included in the error message.

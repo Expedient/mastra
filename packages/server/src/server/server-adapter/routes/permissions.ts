@@ -50,16 +50,20 @@ const EXECUTE_PATTERNS = [
 const PUBLISH_PATTERNS = ['/publish', '/activate', '/restore'];
 
 /**
- * Maps `/stored/<family>` URL segments to canonical permission resource slugs.
+ * Public allowlist mapping `/stored/<family>` URL segments to canonical
+ * compound permission resource slugs. Unknown stored families are intentionally
+ * excluded so a broad `stored:*` grant cannot authorize an unregistered family.
  */
-const STORED_RESOURCE_SEGMENTS: Record<string, string> = {
+export const STORED_RESOURCE_SEGMENTS = {
   agents: 'stored-agents',
   'mcp-clients': 'stored-mcp-clients',
   'prompt-blocks': 'stored-prompt-blocks',
   scorers: 'stored-scorers',
   skills: 'stored-skills',
   workspaces: 'stored-workspaces',
-};
+} as const;
+
+export const STORED_RESOURCE_PERMISSION_ALLOWLIST = Object.values(STORED_RESOURCE_SEGMENTS);
 
 /**
  * Extracts the primary resource name from a route path.
@@ -92,8 +96,9 @@ export function extractResource(path: string): string | null {
   // Handle special case: /stored/<family> → 'stored-<family>' (or mapped slug).
   // Uses exact segment match (not startsWith) so paths like /stored/skills-archive
   // don't incorrectly collapse into a stored family.
-  if (firstSegment === 'stored' && segments[1]) {
-    return STORED_RESOURCE_SEGMENTS[segments[1]] ?? null;
+  const storedSegment = segments[1] as keyof typeof STORED_RESOURCE_SEGMENTS | undefined;
+  if (firstSegment === 'stored' && storedSegment) {
+    return STORED_RESOURCE_SEGMENTS[storedSegment] ?? null;
   }
 
   // Handle .well-known paths (A2A protocol)

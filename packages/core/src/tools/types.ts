@@ -10,7 +10,7 @@ import type {
 import type { ElicitRequest, ElicitResult, ServerContext } from '@modelcontextprotocol/server';
 import type { MastraPrimitives, MastraUnion } from '../action';
 export type { MastraPrimitives, MastraUnion };
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth';
 import type { ToolBackgroundConfig } from '../background-tasks';
 import type { MastraBrowser } from '../browser/browser';
 import type { Mastra } from '../mastra';

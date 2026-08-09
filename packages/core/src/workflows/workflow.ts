@@ -9,8 +9,8 @@ import type { MastraDBMessage, MessageInput } from '../agent/message-list';
 import { isAgentCompatible } from '../agent/subagent';
 import type { SubAgent } from '../agent/subagent';
 import { TripWire } from '../agent/trip-wire';
-import { MastraFGAPermissions } from '../auth/ee';
-import type { ActorSignal } from '../auth/ee';
+import { MastraFGAPermissions } from '../auth/authorization';
+import type { ActorSignal } from '../auth/authorization';
 import { MastraBase } from '../base';
 import { RequestContext } from '../di';
 import { ErrorCategory, ErrorDomain, MastraError, getErrorFromUnknown } from '../error';
@@ -2698,7 +2698,7 @@ export class Workflow<
     const fgaProvider = mastra?.getServer()?.fga;
     if (fgaProvider) {
       const user = requestContext?.get('user' as any);
-      const { getWorkflowFGAResourceId, requireFGA } = await import('../auth/ee/fga-check');
+      const { getWorkflowFGAResourceId, requireFGA } = await import('../auth/authorization');
       await requireFGA({
         fgaProvider,
         user,

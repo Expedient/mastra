@@ -211,7 +211,6 @@ export class MastraEditor implements IMastraEditor {
       }
     }
   }
-
   /** Returns the editor's configured source, or undefined if unset. */
   getSource(): 'code' | 'db' | undefined {
     return this.__source;

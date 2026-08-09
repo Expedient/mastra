@@ -8,7 +8,7 @@ import type { LanguageModelUsage } from '@internal/ai-sdk-v5';
 import type { JSONSchema7 } from 'json-schema';
 import type { z } from 'zod';
 
-import type { ActorSignal } from '../../auth/ee/fga-check';
+import type { ActorSignal } from '../../auth/authorization';
 import type { BackgroundTaskManager } from '../../background-tasks/manager';
 import type { AgentBackgroundConfig } from '../../background-tasks/types';
 import type { SystemMessage } from '../../llm';

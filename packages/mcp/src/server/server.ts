@@ -2563,7 +2563,7 @@ export class MCPServer extends MCPServerBase {
     }
 
     const { getMCPToolFGAResourceId, requireFGA, FGADeniedError, MastraFGAPermissions } =
-      await import('@mastra/core/auth/ee');
+      await import('@mastra/core/auth/authorization');
     const resourceId = getMCPToolFGAResourceId(this.id, toolId);
     const user = await this.resolveMappedFGAUser(requestContext);
     if (!user) {
