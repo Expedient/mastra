@@ -360,8 +360,6 @@ export class MastraEditor implements IMastraEditor {
       return undefined;
     }
 
-    await this.assertAgentBuilderLicensed();
-
     const { EditorAgentBuilder } = await import('./ee');
     this.__builderInstance = new EditorAgentBuilder(this.__builderConfig);
 
@@ -387,34 +385,6 @@ export class MastraEditor implements IMastraEditor {
 
     this.__builderResolved = true;
     return this.__builderInstance;
-  }
-
-  /**
-   * Defense-in-depth license guard for the Agent Builder. Mirrors the
-   * startup-time check in `MastraServer.validateAgentBuilderLicense()` so the
-   * builder cannot be instantiated outside the server boot path without a
-   * valid EE license. Dev environments bypass via `isEEEnabled()`.
-   */
-  private async assertAgentBuilderLicensed(): Promise<void> {
-    try {
-      const { isEEEnabled } = await import('@mastra/core/auth/authorization');
-      if (!isEEEnabled()) {
-        throw new Error(
-          '[mastra/auth-ee] Agent Builder is configured but no valid EE license was found.\n' +
-            'Agent Builder requires a Mastra Enterprise License for production use.\n' +
-            'Set the MASTRA_EE_LICENSE environment variable with your license key.\n' +
-            'Learn more: https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE',
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
-        throw err;
-      }
-      throw new Error(
-        '[mastra/auth-ee] Agent Builder is configured but the authorization module (@mastra/core/auth/authorization) could not be loaded.\n' +
-          'Ensure @mastra/core is updated to a version that includes authorization support.',
-      );
-    }
   }
 
   /** Returns the editor's configured source, or undefined if unset. */

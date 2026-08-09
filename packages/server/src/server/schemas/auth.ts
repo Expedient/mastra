@@ -39,6 +39,7 @@ export const capabilityFlagsSchema = z.object({
   sso: z.boolean(),
   rbac: z.boolean(),
   acl: z.boolean(),
+  fga: z.boolean(),
 });
 
 export const userAccessSchema = z
@@ -52,6 +53,7 @@ export const authenticatedCapabilitiesSchema = publicCapabilitiesSchema.extend({
   user: authenticatedUserSchema,
   capabilities: capabilityFlagsSchema,
   access: userAccessSchema,
+  availableRoles: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
 });
 
 // Note: authenticatedCapabilitiesSchema is listed first because z.union checks left-to-right
@@ -136,10 +138,9 @@ export const credentialsResponseSchema = z.object({
 /**
  * Response schema for GET /auth/permission-patterns.
  *
- * Returns the authoritative list of valid permission-pattern strings (the keys
- * of the EE `PERMISSION_PATTERNS` table). Studio fetches this to validate the
- * hardcoded route→permission literals it ships, replacing a compile-time
- * `@mastra/core/auth/ee` import in the browser bundle.
+ * Returns the authoritative list of valid permission-pattern strings generated
+ * from public server routes and exposed by `@mastra/core/auth/authorization`.
+ * Studio fetches this list to validate its route-permission literals.
  */
 export const permissionPatternsResponseSchema = z.object({
   patterns: z.array(z.string()),

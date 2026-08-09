@@ -14,7 +14,7 @@ import type { AuthResult } from './types';
 export async function initDualWorkOS(): Promise<AuthResult> {
   const { MastraAuthWorkos, MastraRBACWorkos, MastraFGAWorkos } = await import('@mastra/auth-workos');
   const { SimpleAuth } = await import('@mastra/core/server');
-  const { StaticRBACProvider, DEFAULT_ROLES } = await import('@mastra/core/auth/ee');
+  const { StaticRBACProvider, DEFAULT_ROLES } = await import('@mastra/core/auth/authorization');
 
   // Studio auth - WorkOS SSO for internal team members
   const studioAuth = new MastraAuthWorkos({

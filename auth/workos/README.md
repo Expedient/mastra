@@ -24,7 +24,7 @@ pnpm add @mastra/auth-workos
 
 ```typescript
 import { Mastra } from '@mastra/core/mastra';
-import { MastraFGAPermissions } from '@mastra/core/auth/ee';
+import { MastraFGAPermissions } from '@mastra/core/auth/authorization';
 import { MastraAuthWorkos, MastraFGAWorkos } from '@mastra/auth-workos';
 
 // Initialize with environment variables

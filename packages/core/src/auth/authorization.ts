@@ -6,12 +6,36 @@
  */
 import type { User } from '@internal/auth';
 
-export type PermissionPattern = string;
-export type MastraFGAPermission = string;
-export type MastraFGAPermissionInput = string;
-export type Resource = string;
-export type Action = string;
-export type Permission = PermissionPattern;
+import {
+  ACTIONS,
+  MastraFGAPermissions,
+  PERMISSIONS,
+  PERMISSION_PATTERNS,
+  RESOURCES,
+  STORED_RESOURCE_PERMISSION_ALLOWLIST,
+  isValidPermissionPattern,
+  validatePermissions,
+} from './permissions.generated';
+import type {
+  Action,
+  MastraFGAPermission,
+  MastraFGAPermissionInput,
+  Permission,
+  PermissionPattern,
+  Resource,
+} from './permissions.generated';
+
+export {
+  ACTIONS,
+  MastraFGAPermissions,
+  PERMISSIONS,
+  PERMISSION_PATTERNS,
+  RESOURCES,
+  STORED_RESOURCE_PERMISSION_ALLOWLIST,
+  isValidPermissionPattern,
+  validatePermissions,
+};
+export type { Action, MastraFGAPermission, MastraFGAPermissionInput, Permission, PermissionPattern, Resource };
 
 export type ActorSignal =
   | true
@@ -28,7 +52,6 @@ export interface EEUser extends User {
   permissions?: string[];
   organizationId?: string;
   organizationMembershipId?: string;
-  [key: string]: unknown;
 }
 
 export type RoleMapping = Record<string, PermissionPattern[]>;
@@ -54,52 +77,14 @@ export interface IRBACProvider<TUser = unknown> {
   getPermissionsForRole?(roleId: string): Promise<string[]>;
 }
 
-export interface IRBACManager<TUser = unknown> extends IRBACProvider<TUser> {
-  assignRole(userId: string, roleId: string): Promise<void>;
-  removeRole(userId: string, roleId: string): Promise<void>;
-  listRoles(): Promise<RoleDefinition[]>;
-  createRole?(role: RoleDefinition): Promise<void>;
-  deleteRole?(roleId: string): Promise<void>;
-}
-
 export interface ResourceIdentifier {
   type: string;
   id: string;
 }
 
-export interface ACLGrant {
-  subject: { type: 'user' | 'role'; id: string };
-  resource: ResourceIdentifier;
-  actions: string[];
-  grantedAt: Date;
-  grantedBy?: string;
-}
-
-export interface IACLProvider<TUser = unknown> {
-  canAccess(user: TUser, resource: ResourceIdentifier, action: string): Promise<boolean>;
-  listAccessible(user: TUser, resourceType: string, action: string): Promise<string[]>;
-  filterAccessible<T extends { id: string }>(
-    user: TUser,
-    resources: T[],
-    resourceType: string,
-    action: string,
-  ): Promise<T[]>;
-}
-
-export interface IACLManager<TUser = unknown> extends IACLProvider<TUser> {
-  grant(subject: { type: 'user' | 'role'; id: string }, resource: ResourceIdentifier, actions: string[]): Promise<void>;
-  revoke(
-    subject: { type: 'user' | 'role'; id: string },
-    resource: ResourceIdentifier,
-    actions?: string[],
-  ): Promise<void>;
-  listGrants(resource: ResourceIdentifier): Promise<ACLGrant[]>;
-  listGrantsForSubject(subject: { type: 'user' | 'role'; id: string }): Promise<ACLGrant[]>;
-}
-
 export interface FGACheckContext {
   resourceId?: string;
-  requestContext?: { get?(key: string): unknown };
+  requestContext?: { get(key: string): unknown };
   metadata?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -115,7 +100,10 @@ export interface FGARouteConfig {
   resourceIdParam?: string;
   resourceId?:
     | string
-    | ((params: Record<string, unknown>, context: { requestContext?: unknown }) => string | undefined);
+    | ((
+        params: Record<string, unknown>,
+        context: { requestContext?: FGACheckContext['requestContext'] },
+      ) => string | undefined);
   permission?: MastraFGAPermissionInput | MastraFGAPermissionInput[];
 }
 
@@ -130,84 +118,21 @@ export interface FGARouteInfo {
 export interface FGARouteResolverContext {
   route: FGARouteInfo;
   params: Record<string, unknown>;
-  requestContext?: unknown;
+  requestContext?: FGACheckContext['requestContext'];
 }
 
 export type FGARouteResolver = (
   context: FGARouteResolverContext,
 ) => FGARouteConfig | null | undefined | Promise<FGARouteConfig | null | undefined>;
 
-export interface FGAResource {
-  id: string;
-  externalId: string;
-  name: string;
-  description?: string | null;
-  resourceTypeSlug: string;
-  organizationId: string;
-  parentResourceId?: string | null;
-}
-
-export interface FGACreateResourceParams {
-  externalId: string;
-  name: string;
-  description?: string | null;
-  resourceTypeSlug: string;
-  organizationId: string;
-  parentResourceId?: string;
-  parentResourceExternalId?: string;
-  parentResourceTypeSlug?: string;
-}
-
-export interface FGAUpdateResourceParams {
-  resourceId: string;
-  name?: string;
-  description?: string | null;
-}
-
-export interface FGADeleteResourceParams {
-  resourceId?: string;
-  externalId?: string;
-  resourceTypeSlug?: string;
-  organizationId?: string;
-}
-
-export interface FGARoleAssignment {
-  id: string;
-  role: { slug: string };
-  resource: { id: string; externalId: string; resourceTypeSlug: string };
-}
-
-export interface FGARoleParams {
-  organizationMembershipId: string;
-  roleSlug: string;
-  resourceId?: string;
-  resourceExternalId?: string;
-  resourceTypeSlug?: string;
-}
-
-export interface FGAListRoleAssignmentsOptions {
-  organizationMembershipId: string;
-  limit?: number;
-  after?: string;
-}
-
-export interface FGAListResourcesOptions {
-  organizationId?: string;
-  resourceTypeSlug?: string;
-  parentResourceId?: string;
-  search?: string;
-  limit?: number;
-  after?: string;
-}
-
 export interface IFGAProvider<TUser = unknown> {
   requireForProtectedRoutes?: boolean;
   auditProtectedRoutes?: boolean | 'warn' | 'error';
   resolveRouteFGA?: FGARouteResolver;
   validatePermissions?: (permissions: MastraFGAPermissionInput[]) => void | Promise<void>;
-  check?(user: TUser, params: FGACheckParams): Promise<boolean>;
+  check(user: TUser, params: FGACheckParams): Promise<boolean>;
   require?(user: TUser, params: FGACheckParams): Promise<void>;
-  filterAccessible?<T extends { id: string }>(
+  filterAccessible<T extends { id: string }>(
     user: TUser,
     resources: T[],
     resourceType: string,
@@ -217,44 +142,7 @@ export interface IFGAProvider<TUser = unknown> {
   [key: string]: unknown;
 }
 
-export interface IFGAManager<TUser = unknown> extends IFGAProvider<TUser> {
-  createResource(params: FGACreateResourceParams): Promise<FGAResource>;
-  getResource(resourceId: string): Promise<FGAResource>;
-  listResources(options?: FGAListResourcesOptions): Promise<FGAResource[]>;
-  updateResource(params: FGAUpdateResourceParams): Promise<FGAResource>;
-  deleteResource(params: FGADeleteResourceParams): Promise<void>;
-  assignRole(params: FGARoleParams): Promise<FGARoleAssignment>;
-  removeRole(params: FGARoleParams): Promise<void>;
-  listRoleAssignments(options: FGAListRoleAssignmentsOptions): Promise<FGARoleAssignment[]>;
-}
-
-/** Stable permission names used by core's built-in authorization checks. */
-export const MastraFGAPermissions = {
-  AGENTS_CREATE: 'agents:create',
-  AGENTS_DELETE: 'agents:delete',
-  AGENTS_EXECUTE: 'agents:execute',
-  AGENTS_READ: 'agents:read',
-  MEMORY_DELETE: 'memory:delete',
-  MEMORY_READ: 'memory:read',
-  MEMORY_WRITE: 'memory:write',
-  TOOLS_EXECUTE: 'tools:execute',
-  TOOLS_READ: 'tools:read',
-  WORKFLOWS_EXECUTE: 'workflows:execute',
-  WORKFLOWS_READ: 'workflows:read',
-} as const;
-
-export const PERMISSIONS = MastraFGAPermissions;
-export const PERMISSION_PATTERNS: Record<string, string> = {};
-export const RESOURCES: readonly string[] = [];
-export const ACTIONS: readonly string[] = [];
-
-export function isValidPermissionPattern(value: unknown): value is PermissionPattern {
-  return typeof value === 'string' && value.length > 0;
-}
-
-export function validatePermissions(values: unknown[]): values is PermissionPattern[] {
-  return values.every(isValidPermissionPattern);
-}
+const STORED_RESOURCE_PERMISSION_SET = new Set<string>(STORED_RESOURCE_PERMISSION_ALLOWLIST);
 
 /** Match the wildcard permission forms used by core authorization checks. */
 export function matchesPermission(granted: string, required: string): boolean {
@@ -271,9 +159,8 @@ export function matchesPermission(granted: string, required: string): boolean {
   const requiredAction = requiredParts[1]!;
   const requiredId = requiredParts[2];
 
-  // Keep the historical compound alias useful without depending on a generated
-  // route permission registry that is not part of the OSS core package.
-  if (grantedResource === 'stored' && requiredResource.startsWith('stored-')) {
+  if (grantedResource === 'stored') {
+    if (!STORED_RESOURCE_PERMISSION_SET.has(requiredResource)) return false;
     grantedResource = requiredResource;
   }
 
@@ -437,6 +324,11 @@ function isActorSignal(actor: unknown): actor is ActorSignal {
   );
 }
 
+function getTrustedActorOrganizationId(context: FGACheckContext | undefined): string | undefined {
+  const organizationId = context?.requestContext?.get?.('organizationId');
+  return typeof organizationId === 'string' && organizationId.trim().length > 0 ? organizationId : undefined;
+}
+
 export class FGADeniedError extends Error {
   readonly status = 403;
 
@@ -481,6 +373,9 @@ export async function requireFGA(options: RequireFGAOptions): Promise<void> {
   const params = fgaContext ? { resource, permission, context: fgaContext } : { resource, permission };
 
   if (isActorSignal(actor)) {
+    if (!getTrustedActorOrganizationId(fgaContext)) {
+      throw new FGADeniedError(user, resource, permission, 'trusted actor requires an organizationId');
+    }
     if (fgaProvider.requireActor) await fgaProvider.requireActor(actor, params);
     return;
   }
@@ -521,11 +416,10 @@ export interface SafeLicenseSummary {
   tier?: string;
 }
 
-/** OSS compatibility never contacts a license service; it only preserves startup guards. */
-function configuredLicenseKey(): string | undefined {
-  return process.env['MASTRA_LICENSE_KEY'] || process.env['MASTRA_EE_LICENSE'];
-}
-
+/**
+ * Legacy license APIs remain network-free and fail closed. Commercial entitlement
+ * decisions must be made by a separately installed licensing implementation.
+ */
 export function isDevEnvironment(): boolean {
   const mastraDev = process.env['MASTRA_DEV'];
   const nodeEnv = process.env['NODE_ENV'];
@@ -533,31 +427,31 @@ export function isDevEnvironment(): boolean {
 }
 
 export function isLicenseValid(): boolean {
-  return Boolean(configuredLicenseKey());
+  return false;
 }
 
 export const isEELicenseValid = isLicenseValid;
 
 export function isEEEnabled(): boolean {
-  return isDevEnvironment() || isLicenseValid();
+  return false;
 }
 
 export function isFeatureEnabled(_feature: string): boolean {
-  return isLicenseValid();
+  return false;
 }
 
 export function clearLicenseCache(): void {}
 export function warnIfDevEENeedsLicense(): void {}
 export function startLicenseValidation(): Promise<boolean> {
-  return Promise.resolve(isEEEnabled());
+  return Promise.resolve(false);
 }
 
-export function validateLicense(licenseKey: string | undefined = configuredLicenseKey()): LicenseInfo {
-  return { valid: isDevEnvironment() || Boolean(licenseKey) };
+export function validateLicense(_licenseKey?: string): LicenseInfo {
+  return { valid: false };
 }
 
 export function getSafeLicenseSummary(): SafeLicenseSummary {
-  return { valid: isEEEnabled(), isDevEnvironment: isDevEnvironment() };
+  return { valid: false, isDevEnvironment: isDevEnvironment() };
 }
 
 interface LoginButtonConfig {
@@ -624,7 +518,28 @@ type AuthCapabilitiesProvider = {
   canAccess?: (...args: unknown[]) => unknown;
 };
 
-/** Build the non-enterprise authentication capabilities exposed to Studio. */
+function projectAuthenticatedUser(user: unknown): AuthenticatedUser | null {
+  if (!user || typeof user !== 'object') return null;
+  const candidate = user as Record<string, unknown>;
+  if (typeof candidate['id'] !== 'string') return null;
+
+  const projected: AuthenticatedUser = { id: candidate['id'] };
+  if (typeof candidate['email'] === 'string') projected.email = candidate['email'];
+  if (typeof candidate['name'] === 'string') projected.name = candidate['name'];
+  if (typeof candidate['avatarUrl'] === 'string') projected.avatarUrl = candidate['avatarUrl'];
+  return projected;
+}
+
+function hasAdminBypass(permissions: string[]): boolean {
+  return permissions.includes('*') || permissions.includes('*:*');
+}
+
+function getServerSSOLoginUrl(apiPrefix: string | undefined): string {
+  const prefix = (apiPrefix ?? '/api').replace(/\/+$/, '');
+  return `${prefix}/auth/sso/login`;
+}
+
+/** Build authentication capabilities exposed to Studio without licensing or network checks. */
 export async function buildCapabilities(
   auth: AuthCapabilitiesProvider | null | undefined,
   request: Request,
@@ -636,36 +551,41 @@ export async function buildCapabilities(
   const hasSSO = Boolean(loginConfig && auth.getLoginUrl);
   const hasCredentials = typeof auth.signIn === 'function';
   const signUpEnabled = auth.isSignUpEnabled?.() ?? true;
-  const loginUrl = hasSSO ? await auth.getLoginUrl!(request.url, '') : '';
   const login = hasSSO
     ? {
         type: hasCredentials ? ('both' as const) : ('sso' as const),
         ...(hasCredentials ? { signUpEnabled } : {}),
         ...(loginConfig?.description ? { description: loginConfig.description } : {}),
-        sso: { ...loginConfig!, url: loginUrl },
+        sso: { ...loginConfig!, url: getServerSSOLoginUrl(options.apiPrefix) },
       }
     : hasCredentials
       ? { type: 'credentials' as const, signUpEnabled }
       : null;
 
-  let user: unknown = null;
+  let providerUser: unknown = null;
   if (auth.getCurrentUser) {
     try {
-      user = await auth.getCurrentUser(request);
+      providerUser = await auth.getCurrentUser(request);
     } catch {
-      user = null;
+      providerUser = null;
     }
   }
+  const user = projectAuthenticatedUser(providerUser);
   if (!user) return { enabled: true, login };
 
   let access: UserAccess | null = null;
   let availableRoles: { id: string; name: string }[] | undefined;
   if (options.rbac) {
     try {
-      const roles = await options.rbac.getRoles(user);
-      const permissions = await options.rbac.getPermissions(user);
+      const roles = await options.rbac.getRoles(providerUser);
+      const permissions = await options.rbac.getPermissions(providerUser);
       access = { roles, permissions };
-      if (options.rbac.getAvailableRoles) availableRoles = await options.rbac.getAvailableRoles();
+      if (hasAdminBypass(permissions) && options.rbac.getAvailableRoles) {
+        const providerRoles = await options.rbac.getAvailableRoles();
+        availableRoles = providerRoles
+          .filter(role => typeof role.id === 'string' && typeof role.name === 'string')
+          .map(({ id, name }) => ({ id, name }));
+      }
     } catch {
       access = null;
     }
@@ -674,7 +594,7 @@ export async function buildCapabilities(
   return {
     enabled: true,
     login,
-    user: user as AuthenticatedUser,
+    user,
     capabilities: {
       user: Boolean(auth.getCurrentUser),
       session: typeof auth.createSession === 'function',

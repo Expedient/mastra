@@ -1583,53 +1583,24 @@ describe('MastraEditor.resolveBuilder', () => {
 });
 
 // ============================================================================
-// MastraEditor.resolveBuilder license guard
+// MastraEditor.resolveBuilder OSS availability
 // ============================================================================
 
-describe('MastraEditor.resolveBuilder license guard', () => {
-  const originalNodeEnv = process.env.NODE_ENV;
-  const originalLicense = process.env.MASTRA_EE_LICENSE;
-
-  beforeEach(() => {
-    delete process.env.MASTRA_EE_LICENSE;
-    process.env.NODE_ENV = 'production';
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    if (originalNodeEnv === undefined) {
-      delete process.env.NODE_ENV;
-    } else {
-      process.env.NODE_ENV = originalNodeEnv;
-    }
-    if (originalLicense === undefined) {
-      delete process.env.MASTRA_EE_LICENSE;
-    } else {
-      process.env.MASTRA_EE_LICENSE = originalLicense;
-    }
-    vi.resetModules();
-  });
-
-  it('throws [mastra/auth-ee] when builder is configured without a license in production', async () => {
+describe('MastraEditor.resolveBuilder OSS availability', () => {
+  it('resolves Agent Builder without a commercial license', async () => {
     const editor = new MastraEditor({ builder: { enabled: true } });
-    await expect(editor.resolveBuilder()).rejects.toThrow(/\[mastra\/auth-ee\]/);
+
+    await expect(editor.resolveBuilder()).resolves.toBeDefined();
   });
 
-  it('does not throw when builder is omitted', async () => {
+  it('returns undefined when builder is omitted', async () => {
     const editor = new MastraEditor({});
     await expect(editor.resolveBuilder()).resolves.toBeUndefined();
   });
 
-  it('does not throw when builder.enabled is false', async () => {
+  it('returns undefined when builder.enabled is false', async () => {
     const editor = new MastraEditor({ builder: { enabled: false } });
     await expect(editor.resolveBuilder()).resolves.toBeUndefined();
-  });
-
-  it('resolves builder when a valid MASTRA_EE_LICENSE is set', async () => {
-    process.env.MASTRA_EE_LICENSE = 'a'.repeat(64);
-    const editor = new MastraEditor({ builder: { enabled: true } });
-    const result = await editor.resolveBuilder();
-    expect(result).toBeDefined();
   });
 });
 
