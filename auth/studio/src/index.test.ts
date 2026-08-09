@@ -1341,6 +1341,36 @@ describe('MastraRBACStudio', () => {
     it('no-role user should have no permissions', async () => {
       expect(await rbac.hasPermission(noRoleUser, 'agents:read')).toBe(false);
     });
+
+    it('matches cross-resource action wildcards without crossing actions', async () => {
+      const wildcardRbac = new MastraRBACStudio({ roleMapping: { reader: ['*:read'] } });
+      const reader: StudioUser = { id: 'reader', role: 'reader' };
+
+      await expect(wildcardRbac.hasPermission(reader, 'agents:read')).resolves.toBe(true);
+      await expect(wildcardRbac.hasPermission(reader, 'workflows:read:item-1')).resolves.toBe(true);
+      await expect(wildcardRbac.hasPermission(reader, 'agents:write')).resolves.toBe(false);
+    });
+
+    it('matches resource and action wildcards scoped to resource IDs', async () => {
+      const wildcardRbac = new MastraRBACStudio({
+        roleMapping: { operator: ['agents:*:agent-1', '*:read:shared'] },
+      });
+      const operator: StudioUser = { id: 'operator', role: 'operator' };
+
+      await expect(wildcardRbac.hasPermission(operator, 'agents:write:agent-1')).resolves.toBe(true);
+      await expect(wildcardRbac.hasPermission(operator, 'agents:write:agent-2')).resolves.toBe(false);
+      await expect(wildcardRbac.hasPermission(operator, 'workflows:read:shared')).resolves.toBe(true);
+      await expect(wildcardRbac.hasPermission(operator, 'workflows:read:private')).resolves.toBe(false);
+    });
+
+    it('matches compound stored aliases with actions and resource IDs', async () => {
+      const storedRbac = new MastraRBACStudio({ roleMapping: { editor: ['stored:read:item-1', 'stored:*'] } });
+      const editor: StudioUser = { id: 'editor', role: 'editor' };
+
+      await expect(storedRbac.hasPermission(editor, 'stored-agents:read:item-1')).resolves.toBe(true);
+      await expect(storedRbac.hasPermission(editor, 'stored-skills:read:item-2')).resolves.toBe(true);
+      await expect(storedRbac.hasPermission(editor, 'agents:read:item-1')).resolves.toBe(false);
+    });
   });
 
   describe('hasAllPermissions', () => {

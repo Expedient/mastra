@@ -261,14 +261,12 @@ export type MastraFGAPermissionMapping = Partial<Record<MastraFGAPermission, str
  *
  * @example
  * ```typescript
- * import { MastraFGAPermissions } from '@internal/auth/authorization';
- *
  * new MastraFGAWorkos({
  *   resourceMapping: {
  *     agent: { fgaResourceType: 'team', deriveId: (ctx) => ctx.user.teamId },
  *   },
  *   permissionMapping: {
- *     [MastraFGAPermissions.AGENTS_EXECUTE]: 'manage-workflows',
+ *     'agents:execute': 'manage-workflows',
  *   },
  *   requireForProtectedRoutes: true,
  *   auditProtectedRoutes: 'warn',
@@ -295,7 +293,7 @@ export interface MastraFGAWorkosOptions {
   resourceMapping?: Record<string, FGAResourceMappingEntry>;
   /**
    * Map Mastra permission strings to WorkOS permission slugs.
-   * Keys are Mastra permissions such as MastraFGAPermissions.AGENTS_EXECUTE,
+   * Keys are Mastra permission strings such as `agents:execute`,
    * values are WorkOS permission slugs.
    */
   permissionMapping?: MastraFGAPermissionMapping;
