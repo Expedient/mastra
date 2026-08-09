@@ -34,7 +34,7 @@ type RouteDispatcherGroup = {
 let _hasPermissionPromise: Promise<HasPermissionFn | undefined> | undefined;
 function loadHasPermission(): Promise<HasPermissionFn | undefined> {
   if (!_hasPermissionPromise) {
-    _hasPermissionPromise = import('@mastra/core/auth/ee')
+    _hasPermissionPromise = import('@mastra/core/auth/authorization')
       .then(m => m.hasPermission)
       .catch(() => {
         console.error(

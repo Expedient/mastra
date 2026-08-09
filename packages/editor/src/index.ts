@@ -397,7 +397,7 @@ export class MastraEditor implements IMastraEditor {
    */
   private async assertAgentBuilderLicensed(): Promise<void> {
     try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
+      const { isEEEnabled } = await import('@mastra/core/auth/authorization');
       if (!isEEEnabled()) {
         throw new Error(
           '[mastra/auth-ee] Agent Builder is configured but no valid EE license was found.\n' +
@@ -411,8 +411,8 @@ export class MastraEditor implements IMastraEditor {
         throw err;
       }
       throw new Error(
-        '[mastra/auth-ee] Agent Builder is configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n' +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
+        '[mastra/auth-ee] Agent Builder is configured but the authorization module (@mastra/core/auth/authorization) could not be loaded.\n' +
+          'Ensure @mastra/core is updated to a version that includes authorization support.',
       );
     }
   }

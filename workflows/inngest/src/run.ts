@@ -1,5 +1,5 @@
 import { ReadableStream } from 'node:stream/web';
-import type { ActorSignal } from '@mastra/core/auth/ee';
+import type { ActorSignal } from '@mastra/core/auth/authorization';
 import { getErrorFromUnknown } from '@mastra/core/error';
 import type { Mastra } from '@mastra/core/mastra';
 import type { TracingContext, TracingOptions } from '@mastra/core/observability';

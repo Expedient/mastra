@@ -3,9 +3,7 @@ import type { Handler, MiddlewareHandler, Context } from 'hono';
 import type { cors } from 'hono/cors';
 import type { DescribeRouteOptions } from 'hono-openapi';
 import type { ZodError } from 'zod/v4';
-import type { FGARouteConfig, IFGAProvider } from '../auth/ee/interfaces/fga';
-import type { MastraFGAPermissionInput } from '../auth/ee/interfaces/permissions.generated';
-import type { IRBACProvider } from '../auth/ee/interfaces/rbac';
+import type { FGARouteConfig, IFGAProvider, MastraFGAPermissionInput, IRBACProvider } from '../auth';
 import type { Mastra } from '../mastra';
 import type { RequestContext } from '../request-context';
 import type { IMastraAuthProvider } from './auth';
@@ -306,7 +304,7 @@ export type ServerConfig = {
    *
    * @example Using StaticRBACProvider with role definitions
    * ```typescript
-   * import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/ee';
+   * import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth';
    *
    * const mastra = new Mastra({
    *   server: {

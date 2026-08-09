@@ -1,4 +1,4 @@
-import type { ActorSignal } from '../../auth/ee';
+import type { ActorSignal } from '../../auth';
 import type { RequestContext } from '../../di';
 import type { SerializedError } from '../../error';
 import type { PubSub } from '../../events/pubsub';

@@ -2,7 +2,7 @@
  * @license Mastra Enterprise License - see ee/LICENSE
  */
 import { PassThrough } from 'node:stream';
-import type { IFGAProvider } from '@mastra/core/auth/ee';
+import type { IFGAProvider } from '@mastra/core/auth/authorization';
 import { Mastra } from '@mastra/core/mastra';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MastraServer } from './index';

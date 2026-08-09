@@ -1,7 +1,12 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ToolsInput } from '@mastra/core/agent';
-import type { FGARouteConfig, FGARouteInfo, IFGAProvider, MastraFGAPermissionInput } from '@mastra/core/auth/ee';
+import type {
+  FGARouteConfig,
+  FGARouteInfo,
+  IFGAProvider,
+  MastraFGAPermissionInput,
+} from '@mastra/core/auth/authorization';
 import type { Mastra } from '@mastra/core/mastra';
 import { RequestContext } from '@mastra/core/request-context';
 import { MastraServerBase } from '@mastra/core/server';
@@ -821,7 +826,7 @@ export abstract class MastraServer<TApp, TRequest, TResponse> extends MastraServ
     if (configuredFeatures.length === 0) return;
 
     try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
+      const { isEEEnabled } = await import('@mastra/core/auth/authorization');
       if (!isEEEnabled()) {
         const featureList = configuredFeatures.join(' and ');
         throw new Error(
@@ -835,10 +840,10 @@ export abstract class MastraServer<TApp, TRequest, TResponse> extends MastraServ
       if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
         throw err;
       }
-      // @mastra/core/auth/ee module not available; EE authorization cannot function.
+      // The core authorization compatibility module is unavailable.
       throw new Error(
-        `[mastra/auth-ee] ${configuredFeatures.join(' and ')} ${configuredFeatures.length === 1 ? 'is' : 'are'} configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n` +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
+        `[mastra/auth-ee] ${configuredFeatures.join(' and ')} ${configuredFeatures.length === 1 ? 'is' : 'are'} configured but the authorization module (@mastra/core/auth/authorization) could not be loaded.\n` +
+          'Ensure @mastra/core is updated to a version that includes authorization support.',
       );
     }
   }
@@ -852,7 +857,7 @@ export abstract class MastraServer<TApp, TRequest, TResponse> extends MastraServ
     if (!editor?.hasEnabledBuilderConfig?.()) return;
 
     try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
+      const { isEEEnabled } = await import('@mastra/core/auth/authorization');
       if (!isEEEnabled()) {
         throw new Error(
           '[mastra/auth-ee] Agent Builder is configured but no valid EE license was found.\n' +
@@ -865,10 +870,10 @@ export abstract class MastraServer<TApp, TRequest, TResponse> extends MastraServ
       if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
         throw err;
       }
-      // @mastra/core/auth/ee module not available — Agent Builder cannot function
+      // The core authorization compatibility module is unavailable.
       throw new Error(
-        '[mastra/auth-ee] Agent Builder is configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n' +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
+        '[mastra/auth-ee] Agent Builder is configured but the authorization module (@mastra/core/auth/authorization) could not be loaded.\n' +
+          'Ensure @mastra/core is updated to a version that includes authorization support.',
       );
     }
   }

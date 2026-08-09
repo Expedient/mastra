@@ -1,5 +1,5 @@
 import { TripWire } from '../agent/trip-wire';
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import { RequestContext } from '../di';
 import { MastraError, MastraNonRetryableError, ErrorDomain, ErrorCategory } from '../error';
 import type { SerializedError } from '../error';

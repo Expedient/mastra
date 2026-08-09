@@ -1,4 +1,4 @@
-import { clearLicenseCache } from '@mastra/core/auth/ee';
+import { clearLicenseCache } from '@mastra/core/auth/authorization';
 import { Mastra } from '@mastra/core/mastra';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MastraServer } from './index';

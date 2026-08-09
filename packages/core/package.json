@@ -101,14 +101,14 @@
         "default": "./dist/auth/index.cjs"
       }
     },
-    "./auth/ee": {
+    "./auth/authorization": {
       "import": {
-        "types": "./dist/auth/ee/index.d.ts",
-        "default": "./dist/auth/ee/index.js"
+        "types": "./dist/auth/authorization.d.ts",
+        "default": "./dist/auth/authorization.js"
       },
       "require": {
-        "types": "./dist/auth/ee/index.d.ts",
-        "default": "./dist/auth/ee/index.cjs"
+        "types": "./dist/auth/authorization.d.ts",
+        "default": "./dist/auth/authorization.cjs"
       }
     },
     "./agent-builder/ee": {
