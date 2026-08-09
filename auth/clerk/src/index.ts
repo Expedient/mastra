@@ -8,7 +8,7 @@ import type {
   SSOCallbackResult,
   SSOLoginConfig,
 } from '@internal/auth';
-import type { EEUser } from '@internal/auth/ee';
+import type { EEUser } from '@internal/auth/authorization';
 import type { MastraAuthProviderOptions } from '@internal/auth/provider';
 import { MastraAuthProvider } from '@internal/auth/provider';
 import { verifyJwks } from '@mastra/auth';

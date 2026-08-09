@@ -50,24 +50,14 @@
         "default": "./dist/session/index.cjs"
       }
     },
-    "./ee": {
+    "./authorization": {
       "import": {
-        "types": "./dist/ee/index.d.ts",
-        "default": "./dist/ee/index.js"
+        "types": "./dist/authorization.d.ts",
+        "default": "./dist/authorization.js"
       },
       "require": {
-        "types": "./dist/ee/index.d.ts",
-        "default": "./dist/ee/index.cjs"
-      }
-    },
-    "./ee/capabilities": {
-      "import": {
-        "types": "./dist/ee/capabilities.d.ts",
-        "default": "./dist/ee/capabilities.js"
-      },
-      "require": {
-        "types": "./dist/ee/capabilities.d.ts",
-        "default": "./dist/ee/capabilities.cjs"
+        "types": "./dist/authorization.d.ts",
+        "default": "./dist/authorization.cjs"
       }
     },
     "./package.json": "./package.json"
@@ -75,7 +65,6 @@
   "scripts": {
     "build": "tsdown --silent --config tsdown.config.ts",
     "build:watch": "tsdown --watch --silent --config tsdown.config.ts",
-    "test": "vitest run",
     "lint": "oxlint . && eslint .",
     "lint:fix": "oxlint --fix . && eslint --fix .",
     "typecheck": "tsc --noEmit -p tsconfig.build.json"
@@ -86,20 +75,14 @@
   },
   "devDependencies": {
     "@internal/lint": "workspace:*",
-    "@internal/test-utils": "workspace:*",
     "@internal/types-builder": "workspace:*",
     "@types/node": "22.20.1",
-    "@vitest/coverage-v8": "catalog:",
-    "@vitest/ui": "catalog:",
     "eslint": "^10.7.0",
     "tsdown": "0.22.9",
-    "typescript": "catalog:",
-    "vitest": "catalog:",
-    "zod": "catalog:"
+    "typescript": "catalog:"
   },
   "peerDependencies": {
-    "hono": "^4.9.4",
-    "zod": "^3.25.0 || ^4.0.0"
+    "hono": "^4.9.4"
   },
   "homepage": "https://mastra.ai",
   "repository": {

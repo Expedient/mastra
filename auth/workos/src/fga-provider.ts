@@ -19,8 +19,8 @@ import type {
   FGARoleParams,
   FGAListRoleAssignmentsOptions,
   MastraFGAPermissionInput,
-} from '@internal/auth/ee';
-import { FGADeniedError } from '@internal/auth/ee';
+} from '@internal/auth/authorization';
+import { FGADeniedError } from '@internal/auth/authorization';
 import { WorkOS } from '@workos-inc/node';
 
 import type { MastraFGAWorkosOptions, FGAResourceMappingEntry, WorkOSUser } from './types';
@@ -72,7 +72,6 @@ export class WorkOSFGAMembershipResolutionError extends Error {
  * @example Basic usage
  * ```typescript
  * import { MastraFGAWorkos } from '@mastra/auth-workos';
- * import { MastraFGAPermissions } from '@internal/auth/ee';
  *
  * const fga = new MastraFGAWorkos({
  *   resourceMapping: {
@@ -81,10 +80,10 @@ export class WorkOSFGAMembershipResolutionError extends Error {
  *     thread: { fgaResourceType: 'workspace-thread', deriveId: ({ resourceId }) => resourceId },
  *   },
  *   permissionMapping: {
- *     [MastraFGAPermissions.AGENTS_EXECUTE]: 'manage-workflows',
- *     [MastraFGAPermissions.WORKFLOWS_EXECUTE]: 'manage-workflows',
- *     [MastraFGAPermissions.MEMORY_READ]: 'read',
- *     [MastraFGAPermissions.MEMORY_WRITE]: 'update',
+ *     'agents:execute': 'manage-workflows',
+ *     'workflows:execute': 'manage-workflows',
+ *     'memory:read': 'read',
+ *     'memory:write': 'update',
  *   },
  * });
  * ```
