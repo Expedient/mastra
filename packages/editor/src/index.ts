@@ -1,5 +1,4 @@
 import { Mastra } from '@mastra/core';
-import type { AgentBuilderOptions, IAgentBuilder } from '@mastra/core/agent-builder/ee';
 import type {
   IMastraEditor,
   MastraEditorConfig,
@@ -33,7 +32,6 @@ import {
   EditorFavoritesNamespace,
 } from './namespaces';
 import { localFilesystemProvider, localSandboxProvider } from './providers';
-import { snapshotsMatch } from './snapshots-match';
 
 export type { MastraEditorConfig };
 
@@ -67,9 +65,6 @@ export class MastraEditor implements IMastraEditor {
   private __source?: 'code' | 'db';
   private __codePath: string;
   private __sourceControlProvider?: SourceControlProvider;
-  private readonly __builderConfig?: AgentBuilderOptions;
-  private __builderInstance?: IAgentBuilder;
-  private __builderResolved = false;
 
   /**
    * @internal — exposed for namespace classes to hydrate stored workspace configs.
@@ -166,9 +161,6 @@ export class MastraEditor implements IMastraEditor {
     this.workspace = new EditorWorkspaceNamespace(this);
     this.skill = new EditorSkillNamespace(this);
     this.favorites = new EditorFavoritesNamespace(this);
-
-    // Store builder config for EE feature
-    this.__builderConfig = config?.builder;
   }
 
   /**
@@ -217,203 +209,6 @@ export class MastraEditor implements IMastraEditor {
           mastra.setStorage(filesystemStore);
         }
       }
-    }
-
-    // Fire-and-forget: persist builder default workspace to DB if configured,
-    // then reconcile orphaned builder workspaces
-    this.ensureBuilderWorkspaces()
-      .then(() => this.reconcileBuilderWorkspaces())
-      .catch(err => {
-        this.__logger?.warn('[MastraEditor] Failed to persist/reconcile builder workspaces on startup', {
-          error: err,
-        });
-      });
-  }
-
-  /**
-   * Ensure the builder default workspace is persisted to the DB.
-   * Called automatically on startup when the editor registers with Mastra.
-   * Goes through the normal create() path so hydration validates that
-   * all providers (filesystem, sandbox) are properly registered.
-   *
-   * If the workspace already exists but its config has drifted from the
-   * runtime workspace, the DB record is updated (creating a new version).
-   * Builder-created workspaces are tagged with `metadata.source = 'builder'`
-   * so they can be identified during reconciliation.
-   */
-  private async ensureBuilderWorkspaces(): Promise<void> {
-    if (!this.hasEnabledBuilderConfig()) return;
-
-    const builder = await this.resolveBuilder();
-    const agentConfig = builder?.getConfiguration()?.agent;
-    const workspaceRef = agentConfig?.workspace as { type: string; workspaceId?: string } | undefined;
-    if (!workspaceRef || workspaceRef.type !== 'id' || !workspaceRef.workspaceId) return;
-
-    const runtimeWorkspace = this.__mastra?.getWorkspaceById(workspaceRef.workspaceId);
-    if (!runtimeWorkspace) return;
-
-    const snapshot = await this.workspace.snapshotFromWorkspace(runtimeWorkspace);
-    const builderMetadata = { source: 'builder' as const, builderWorkspaceId: workspaceRef.workspaceId };
-
-    const existing = await this.workspace.getById(workspaceRef.workspaceId);
-    if (!existing) {
-      // First time — create with builder metadata
-      await this.workspace.create({
-        id: workspaceRef.workspaceId,
-        metadata: builderMetadata,
-        ...snapshot,
-      });
-      this.__logger?.info(`[MastraEditor] Persisted builder workspace '${workspaceRef.workspaceId}' to DB`);
-      return;
-    }
-
-    // Workspace exists — check for config drift and backfill metadata
-    const needsMetadataBackfill = !existing.metadata?.source;
-    const configDrifted = !snapshotsMatch(existing, snapshot);
-
-    if (needsMetadataBackfill || configDrifted) {
-      const updateInput: Record<string, unknown> = { id: workspaceRef.workspaceId };
-      if (needsMetadataBackfill) {
-        updateInput.metadata = { ...existing.metadata, ...builderMetadata };
-      }
-      if (configDrifted) {
-        Object.assign(updateInput, snapshot);
-        this.__logger?.info(
-          `[MastraEditor] Workspace '${workspaceRef.workspaceId}' config drifted — updating DB record`,
-        );
-      }
-      await this.workspace.update(updateInput as any);
-    }
-  }
-
-  /**
-   * Archive builder-created workspaces that no longer match the current
-   * builder configuration. Called after `ensureBuilderWorkspaces()` on startup.
-   *
-   * Only touches workspaces tagged with `metadata.source === 'builder'`.
-   * The current builder workspace (if any) is never archived.
-   */
-  private async reconcileBuilderWorkspaces(): Promise<void> {
-    if (!this.hasEnabledBuilderConfig()) return;
-
-    const builder = await this.resolveBuilder();
-    const agentConfig = builder?.getConfiguration()?.agent;
-    const workspaceRef = agentConfig?.workspace as { type: string; workspaceId?: string } | undefined;
-
-    // Determine the "current" builder workspace ID
-    let currentWorkspaceId: string | undefined;
-    if (workspaceRef?.type === 'id' && workspaceRef.workspaceId) {
-      currentWorkspaceId = workspaceRef.workspaceId;
-    }
-    // For inline workspaces, the ID is deterministic based on config hash
-    // (computed in agent.ensureStoredWorkspace), but since ensureBuilderWorkspaces
-    // only handles type='id', we just need the current ID here.
-
-    // Without a resolvable current workspace ID we can't safely distinguish
-    // orphans from the active workspace, so skip reconciliation entirely.
-    // (Bailing out leaves orphans untouched, which is recoverable; archiving
-    // every builder-tagged workspace would not be.)
-    if (!currentWorkspaceId) return;
-
-    // List all builder-tagged workspaces
-    const { workspaces: allWorkspaces } = await this.workspace.listResolved({
-      perPage: false, // fetch all
-      metadata: { source: 'builder' },
-    });
-
-    for (const ws of allWorkspaces) {
-      // Skip the current builder workspace
-      if (ws.id === currentWorkspaceId) continue;
-      // Skip already archived
-      if (ws.status === 'archived') continue;
-
-      // Archive this orphaned builder workspace
-      try {
-        await this.workspace.update({ id: ws.id, status: 'archived' } as any);
-        this.__logger?.info(`[MastraEditor] Archived orphaned builder workspace '${ws.id}'`);
-      } catch (err) {
-        this.__logger?.warn(`[MastraEditor] Failed to archive workspace '${ws.id}'`, { error: err });
-      }
-    }
-  }
-
-  /**
-   * Sync. OSS-safe. Does NOT import @mastra/editor/ee.
-   * Returns true if builder config is present and enabled.
-   */
-  hasEnabledBuilderConfig(): boolean {
-    if (!this.__builderConfig) return false;
-    return this.__builderConfig.enabled !== false;
-  }
-
-  /**
-   * Async. Dynamic-imports @mastra/editor/ee on first call. Caches result.
-   * Returns undefined if builder is not enabled.
-   */
-  async resolveBuilder(): Promise<IAgentBuilder | undefined> {
-    if (this.__builderResolved) {
-      return this.__builderInstance;
-    }
-
-    if (!this.hasEnabledBuilderConfig()) {
-      this.__builderResolved = true;
-      return undefined;
-    }
-
-    await this.assertAgentBuilderLicensed();
-
-    const { EditorAgentBuilder } = await import('./ee');
-    this.__builderInstance = new EditorAgentBuilder(this.__builderConfig);
-
-    // Cross-validate: if the builder has a browser config with a provider that
-    // isn't registered in __browsers, downgrade the feature flag and warn.
-    const browserRef = this.__builderInstance.getConfiguration()?.agent?.browser;
-    const browserFeatureOn = this.__builderInstance.getFeatures()?.agent?.browser === true;
-    if (browserFeatureOn && browserRef?.config?.provider) {
-      const providerId = browserRef.config.provider;
-      if (!this.__browsers.has(providerId)) {
-        const warning =
-          `Agent Builder browser config references provider "${providerId}" but no matching browser ` +
-          `provider is registered in \`editor.browsers\`. The browser toggle will be hidden. ` +
-          `Register the provider: \`new MastraEditor({ browsers: { "${providerId}": yourProvider } })\`.`;
-        // eslint-disable-next-line no-console
-        console.warn(`[mastra:editor] ${warning}`);
-        const features = this.__builderInstance.getFeatures()?.agent;
-        if (features) {
-          features.browser = false;
-        }
-      }
-    }
-
-    this.__builderResolved = true;
-    return this.__builderInstance;
-  }
-
-  /**
-   * Defense-in-depth license guard for the Agent Builder. Mirrors the
-   * startup-time check in `MastraServer.validateAgentBuilderLicense()` so the
-   * builder cannot be instantiated outside the server boot path without a
-   * valid EE license. Dev environments bypass via `isEEEnabled()`.
-   */
-  private async assertAgentBuilderLicensed(): Promise<void> {
-    try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
-      if (!isEEEnabled()) {
-        throw new Error(
-          '[mastra/auth-ee] Agent Builder is configured but no valid EE license was found.\n' +
-            'Agent Builder requires a Mastra Enterprise License for production use.\n' +
-            'Set the MASTRA_EE_LICENSE environment variable with your license key.\n' +
-            'Learn more: https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE',
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
-        throw err;
-      }
-      throw new Error(
-        '[mastra/auth-ee] Agent Builder is configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n' +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
-      );
     }
   }
 

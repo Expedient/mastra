@@ -74,91 +74,6 @@ const AGENT_SNAPSHOT_CONFIG_FIELDS = [
   'browser',
 ] as const satisfies (keyof StorageAgentSnapshotType)[];
 
-// ============================================================================
-// Builder Defaults
-// ============================================================================
-
-/** Fields from builder.configuration.agent that can be applied as creation defaults */
-const BUILDER_DEFAULT_FIELDS = ['memory', 'workspace', 'browser'] as const;
-
-/**
- * Shape of `configuration.agent.models.default` entries (mirrors
- * `DefaultModelEntry` from `@mastra/core/agent-builder/ee` without the type-level
- * narrowing — this file only cares about the runtime shape).
- */
-type DefaultModelEntryRuntime = {
-  kind?: 'custom';
-  provider: string;
-  modelId: string;
-};
-
-/**
- * Convert the admin's `DefaultModelEntry` (`{ provider, modelId }`) into the
- * stored `StorageModelConfig` (`{ provider, name }`) used by every agent record.
- */
-function defaultModelToStored(entry: DefaultModelEntryRuntime): StorageModelConfig {
-  return { provider: entry.provider, name: entry.modelId };
-}
-
-/**
- * Built-in baseline defaults applied when the admin has not pinned a
- * `configuration.agent.<field>` value AND the user did not provide one on
- * the creation input. Explicit `null` on input still wins (opt-out).
- */
-const BUILDER_BASELINE_DEFAULTS: Partial<Record<(typeof BUILDER_DEFAULT_FIELDS)[number], unknown>> = {
-  memory: { observationalMemory: true } satisfies SerializedMemoryConfig,
-};
-
-/** Model used for observational memory when a builder agent stores `observationalMemory: true`. */
-const BUILDER_DEFAULT_OM_MODEL = 'openai/gpt-5.4-mini';
-
-/**
- * Apply builder defaults to agent creation input.
- * Only applies for fields where input is `undefined` (not `null` — null is explicit disable).
- *
- * Resolution order per field:
- *   1. `input[field]` — user intent always wins
- *   2. `builderAgentConfig[field]` — admin-pinned default
- *   3. `BUILDER_BASELINE_DEFAULTS[field]` — built-in default (e.g. observational memory on)
- *
- * `model` is special-cased: it is NOT in `BUILDER_DEFAULT_FIELDS` because the
- * stored shape (`{ provider, name }`) differs from the admin-config shape
- * (`{ provider, modelId }`). It also must never overwrite a conditional model
- * already present on `input`.
- */
-function applyBuilderDefaults(
-  input: StorageCreateAgentInput,
-  builderAgentConfig: Record<string, unknown> | undefined,
-): StorageCreateAgentInput {
-  const defaults: Partial<StorageCreateAgentInput> = {};
-
-  for (const field of BUILDER_DEFAULT_FIELDS) {
-    if (input[field] !== undefined) continue;
-    const adminValue = builderAgentConfig?.[field];
-    if (adminValue !== undefined) {
-      (defaults as Record<string, unknown>)[field] = adminValue;
-      continue;
-    }
-    const baseline = BUILDER_BASELINE_DEFAULTS[field];
-    if (baseline !== undefined) {
-      (defaults as Record<string, unknown>)[field] = baseline;
-    }
-  }
-
-  // Seed `model` from the admin's `models.default` only when input omits it.
-  // Conditional models are preserved verbatim (they are objects but not the
-  // admin-config shape, and the user's intent always wins).
-  if (input.model === undefined && builderAgentConfig) {
-    const models = (builderAgentConfig.models ?? undefined) as { default?: DefaultModelEntryRuntime } | undefined;
-    const adminDefault = models?.default;
-    if (adminDefault && typeof adminDefault.provider === 'string' && typeof adminDefault.modelId === 'string') {
-      (defaults as Record<string, unknown>).model = defaultModelToStored(adminDefault);
-    }
-  }
-
-  return Object.keys(defaults).length > 0 ? { ...input, ...defaults } : input;
-}
-
 function getProvidedAgentRecordFields(input: StorageUpdateAgentInput): StorageUpdateAgentInput | null {
   const { id, authorId, visibility, activeVersionId, metadata, status } = input;
   const recordFields: StorageUpdateAgentInput = { id };
@@ -305,35 +220,26 @@ export class EditorAgentNamespace extends CrudEditorNamespace<
   }
 
   /**
-   * Create a new agent, applying builder defaults for fields not specified in input.
-   * Also ensures the referenced workspace (if any) is persisted as a stored workspace.
+   * Create a new agent and persist any referenced workspace before hydration.
    */
   async create(input: StorageCreateAgentInput): Promise<Agent> {
-    let finalInput = input;
-
-    if (this.editor.hasEnabledBuilderConfig()) {
-      const builder = await this.editor.resolveBuilder();
-      const agentConfig = builder?.getConfiguration()?.agent;
-      finalInput = applyBuilderDefaults(input, agentConfig);
-    }
-
     // Ensure the workspace referenced by the agent exists in stored workspaces
-    await this.ensureStoredWorkspace(finalInput.workspace as StorageWorkspaceRef | undefined);
+    await this.ensureStoredWorkspace(input.workspace as StorageWorkspaceRef | undefined);
 
     // When creating a stored override for an agent that is already defined in
     // code, the stored snapshot is an intentionally partial override (e.g.
     // descriptions-only agents carry no instructions/model/name). Hydrating it
     // as a standalone agent would fail because Agent requires a model. Persist
     // the override and return the existing code-defined runtime agent instead.
-    const existingCodeAgent = this.getCodeDefinedAgent(finalInput.id);
+    const existingCodeAgent = this.getCodeDefinedAgent(input.id);
     if (existingCodeAgent) {
       const adapter = await this.getStorageAdapter();
-      await adapter.create(finalInput);
-      this._cache.set(finalInput.id, existingCodeAgent);
+      await adapter.create(input);
+      this._cache.set(input.id, existingCodeAgent);
       return existingCodeAgent;
     }
 
-    return super.create(finalInput);
+    return super.create(input);
   }
 
   private getCodeDefinedAgent(id: string): Agent | undefined {
@@ -1460,12 +1366,7 @@ export class EditorAgentNamespace extends CrudEditorNamespace<
       if (memoryConfig.observationalMemory) {
         options = {
           ...options,
-          // A literal `true` means "use the builder default OM model"; an explicit
-          // object (user/admin choice) passes through untouched.
-          observationalMemory:
-            memoryConfig.observationalMemory === true
-              ? { model: BUILDER_DEFAULT_OM_MODEL }
-              : memoryConfig.observationalMemory,
+          observationalMemory: memoryConfig.observationalMemory,
         };
       }
 
