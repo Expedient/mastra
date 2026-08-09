@@ -111,13 +111,12 @@ describe('canonical permissions', () => {
       'stored-prompt-blocks',
       'stored-scorers',
       'stored-skills',
-      'stored-workflows',
       'stored-workspaces',
     ]);
   });
 
   it('limits compound stored grants to registered stored-resource families', () => {
-    expect(matchesPermission('stored:read', 'stored-workflows:read')).toBe(true);
+    expect(matchesPermission('stored:read', 'stored-workflows:read')).toBe(false);
     expect(matchesPermission('stored:*', 'stored-skills:delete')).toBe(true);
     expect(matchesPermission('stored:*', 'stored-secrets:read')).toBe(false);
   });

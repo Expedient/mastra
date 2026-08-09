@@ -60,7 +60,6 @@ export const STORED_RESOURCE_SEGMENTS = {
   'prompt-blocks': 'stored-prompt-blocks',
   scorers: 'stored-scorers',
   skills: 'stored-skills',
-  workflows: 'stored-workflows',
   workspaces: 'stored-workspaces',
 } as const;
 

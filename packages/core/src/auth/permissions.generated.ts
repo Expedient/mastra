@@ -73,7 +73,6 @@ export const STORED_RESOURCE_PERMISSION_ALLOWLIST = [
   'stored-prompt-blocks',
   'stored-scorers',
   'stored-skills',
-  'stored-workflows',
   'stored-workspaces',
 ] as const satisfies readonly Resource[];
 

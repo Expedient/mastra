@@ -6,7 +6,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { extractResource, deriveAction, derivePermission, getEffectivePermission } from './permissions';
+import {
+  STORED_RESOURCE_PERMISSION_ALLOWLIST,
+  extractResource,
+  deriveAction,
+  derivePermission,
+  getEffectivePermission,
+} from './permissions';
 import type { ServerRoute } from './index';
 
 describe('extractResource', () => {
@@ -119,6 +125,18 @@ describe('extractResource', () => {
       expect(extractResource('/stored/scorers/:scorerId')).toBe('stored-scorers');
       expect(extractResource('/stored/skills/:skillId')).toBe('stored-skills');
       expect(extractResource('/stored/workspaces/:workspaceId')).toBe('stored-workspaces');
+    });
+
+    it('uses the approved compound stored-resource allowlist', () => {
+      expect(STORED_RESOURCE_PERMISSION_ALLOWLIST).toEqual([
+        'stored-agents',
+        'stored-mcp-clients',
+        'stored-prompt-blocks',
+        'stored-scorers',
+        'stored-skills',
+        'stored-workspaces',
+      ]);
+      expect(extractResource('/stored/workflows/:workflowId')).toBeNull();
     });
 
     it('should NOT collapse /stored/skills-archive into stored-skills', () => {
