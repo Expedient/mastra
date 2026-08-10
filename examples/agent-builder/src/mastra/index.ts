@@ -1,7 +1,6 @@
 import { Mastra } from '@mastra/core';
-import { MastraEditor } from '@mastra/editor';
+import { createBuilderAgent, MastraEditor } from '@mastra/editor';
 import { LibSQLStore } from '@mastra/libsql';
-import { createBuilderAgent } from '@mastra/editor/ee';
 import { Observability, DefaultExporter, CloudExporter, SensitiveDataFilter } from '@mastra/observability';
 import { initWorkOS } from './auth';
 import { StagehandBrowser } from '@mastra/stagehand';

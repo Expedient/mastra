@@ -1,5 +1,7 @@
 import { Mastra } from '@mastra/core';
 import type {
+  AgentBuilderOptions,
+  IAgentBuilder,
   IMastraEditor,
   MastraEditorConfig,
   FilesystemProvider,
@@ -21,6 +23,7 @@ import type { BlobStore, SourceControlProvider } from '@mastra/core/storage';
 import { UnknownToolProviderError } from '@mastra/core/tool-provider';
 import type { ToolProvider } from '@mastra/core/tool-provider';
 
+import { EditorAgentBuilder } from './agent-builder';
 import {
   EditorAgentNamespace,
   EditorMCPNamespace,
@@ -33,7 +36,34 @@ import {
 } from './namespaces';
 import { localFilesystemProvider, localSandboxProvider } from './providers';
 
-export type { MastraEditorConfig };
+export type {
+  AgentBuilderOptions,
+  BuilderAgentConfiguration,
+  BuilderAgentFeatureOptions,
+  BuilderAgentFeatures,
+  BuilderAgentModelOptions,
+  BuilderDefaultModelEntry,
+  BuilderModelPolicy,
+  BuilderPickerAllowlist,
+  BuilderProviderModelEntry,
+  IAgentBuilder,
+  MastraEditorConfig,
+} from '@mastra/core/editor';
+export {
+  BUILDER_BASELINE_DEFAULTS,
+  EditorAgentBuilder,
+  applyBuilderAgentDefaults,
+  assertBuilderAgentModelPolicy,
+  builderToModelPolicy,
+  createBuilderAgent,
+  isModelAllowed,
+  resolvePickerVisibility,
+} from './agent-builder';
+export type {
+  BuilderPickerVisibility,
+  CreateBuilderAgentConfig,
+  ResolvePickerVisibilityOptions,
+} from './agent-builder';
 
 export { renderTemplate } from './template-engine';
 export { evaluateRuleGroup } from './rule-evaluator';
@@ -65,6 +95,9 @@ export class MastraEditor implements IMastraEditor {
   private __source?: 'code' | 'db';
   private __codePath: string;
   private __sourceControlProvider?: SourceControlProvider;
+
+  private __builderConfig?: AgentBuilderOptions;
+  private __builder?: IAgentBuilder;
 
   /**
    * @internal — exposed for namespace classes to hydrate stored workspace configs.
@@ -120,6 +153,7 @@ export class MastraEditor implements IMastraEditor {
     this.__sourceControlProvider =
       config?.sourceControlProvider ??
       createGitHubSourceControlProviderFromEnv(process.env, { pathPrefix: this.__codePath });
+    this.__builderConfig = config?.builder;
 
     // Built-in providers are always registered first, then merged with user-provided ones
     this.__filesystems = new Map<string, FilesystemProvider>();
@@ -211,6 +245,19 @@ export class MastraEditor implements IMastraEditor {
       }
     }
   }
+
+  /** Returns true when Builder configuration is present unless it is explicitly disabled. */
+  hasEnabledBuilderConfig(): boolean {
+    return this.__builderConfig !== undefined && this.__builderConfig.enabled !== false;
+  }
+
+  /** Resolves the configured open-source Agent Builder runtime. */
+  async resolveBuilder(): Promise<IAgentBuilder | undefined> {
+    if (!this.hasEnabledBuilderConfig()) return undefined;
+    this.__builder ??= new EditorAgentBuilder(this.__builderConfig!, this.__logger, this.__browsers);
+    return this.__builder;
+  }
+
   /** Returns the editor's configured source, or undefined if unset. */
   getSource(): 'code' | 'db' | undefined {
     return this.__source;

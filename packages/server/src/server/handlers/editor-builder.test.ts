@@ -1,6 +1,7 @@
-import type { IAgentBuilder } from '@mastra/core/agent-builder/ee';
-import type { IMastraEditor } from '@mastra/core/editor';
+import type { IAgentBuilder, IMastraEditor } from '@mastra/core/editor';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { MastraEditor } from '../../../../editor/src/index';
 
 import {
   GET_EDITOR_BUILDER_AVAILABLE_MODELS_ROUTE,
@@ -75,12 +76,22 @@ describe('GET /editor/builder/settings', () => {
       enabled: true,
       features: { agent: { tools: true, memory: true } },
       configuration: { agent: { maxTokens: 4096 } },
-      modelPolicy: { active: false },
+      modelPolicy: { active: true, pickerVisible: true },
       picker: {
         visibleTools: null,
         visibleAgents: null,
         visibleWorkflows: null,
       },
+    });
+  });
+
+  it('returns an active model policy for a real editor builder without model constraints', async () => {
+    const editor = new MastraEditor({ builder: {} });
+    const result = await GET_EDITOR_BUILDER_SETTINGS_ROUTE.handler({ mastra: createMockMastra(editor) } as any);
+
+    expect(result).toMatchObject({
+      enabled: true,
+      modelPolicy: { active: true, pickerVisible: true },
     });
   });
 
@@ -633,8 +644,11 @@ describe('GET /editor/builder/models/available', () => {
     else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
   });
 
-  it('returns only providers with a configured API key when no policy is configured', async () => {
-    const { providers } = await runAvailable();
+  it('keeps all connected providers when the policy is inactive', async () => {
+    const { providers } = await runAvailable({
+      hasEnabledBuilderConfig: () => false,
+      resolveBuilder: vi.fn(),
+    });
 
     expect(providers.length).toBeGreaterThan(0);
     // Every returned provider is connected (has its API key configured).
@@ -676,6 +690,25 @@ describe('GET /editor/builder/models/available', () => {
     // Only the allowed provider survives the filter.
     expect(providers.map(p => p.id)).toEqual(['openai']);
     expect(providers[0]!.models.length).toBeGreaterThan(0);
+  });
+
+  it('returns no providers for an active empty allowlist', async () => {
+    const builder: IAgentBuilder = {
+      enabled: true,
+      getFeatures: () => ({ agent: { tools: true } }),
+      getConfiguration: () => ({
+        agent: {
+          models: { allowed: [] },
+        },
+      }),
+    };
+
+    const { providers } = await runAvailable({
+      hasEnabledBuilderConfig: () => true,
+      resolveBuilder: vi.fn().mockResolvedValue(builder),
+    });
+
+    expect(providers).toEqual([]);
   });
 
   it('keeps only the explicitly allowed model under a provider', async () => {

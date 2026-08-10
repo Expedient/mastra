@@ -41,6 +41,7 @@ import { RequestContext } from '@mastra/core/request-context';
 import { resolveStoredToolProviders } from '@mastra/core/tool-provider';
 import type { ToolProviders } from '@mastra/core/tool-provider';
 
+import { applyBuilderAgentDefaults, assertBuilderAgentModelPolicy } from '../agent-builder';
 import { evaluateRuleGroup } from '../rule-evaluator';
 import { resolveInstructionBlocks } from '../instruction-builder';
 import { hydrateProcessorGraph, selectFirstMatchingGraph } from '../processor-graph-hydrator';
@@ -223,23 +224,25 @@ export class EditorAgentNamespace extends CrudEditorNamespace<
    * Create a new agent and persist any referenced workspace before hydration.
    */
   async create(input: StorageCreateAgentInput): Promise<Agent> {
-    // Ensure the workspace referenced by the agent exists in stored workspaces
-    await this.ensureStoredWorkspace(input.workspace as StorageWorkspaceRef | undefined);
-
-    // When creating a stored override for an agent that is already defined in
-    // code, the stored snapshot is an intentionally partial override (e.g.
-    // descriptions-only agents carry no instructions/model/name). Hydrating it
-    // as a standalone agent would fail because Agent requires a model. Persist
-    // the override and return the existing code-defined runtime agent instead.
+    // A stored override for an existing code agent must stay partial. Builder
+    // defaults apply only to newly created stored agents.
     const existingCodeAgent = this.getCodeDefinedAgent(input.id);
     if (existingCodeAgent) {
+      await this.ensureStoredWorkspace(input.workspace as StorageWorkspaceRef | undefined);
       const adapter = await this.getStorageAdapter();
       await adapter.create(input);
       this._cache.set(input.id, existingCodeAgent);
       return existingCodeAgent;
     }
 
-    return super.create(input);
+    const builder = await this.editor.resolveBuilder();
+    const resolvedInput = builder?.enabled ? applyBuilderAgentDefaults(input, builder.getConfiguration().agent) : input;
+    if (builder?.enabled) {
+      assertBuilderAgentModelPolicy(resolvedInput, builder.getConfiguration().agent, builder.getFeatures().agent);
+    }
+
+    await this.ensureStoredWorkspace(resolvedInput.workspace as StorageWorkspaceRef | undefined);
+    return super.create(resolvedInput);
   }
 
   private getCodeDefinedAgent(id: string): Agent | undefined {

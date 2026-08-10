@@ -15,16 +15,7 @@ export interface ZodErrorLike {
   }>;
 }
 
-/**
- * Recognition for `ModelNotAllowedError` from `@mastra/core/agent-builder/ee`.
- *
- * Inlined as a duck check rather than imported so that `handleError` (wired
- * into every route) does not force a load-time dependency on the
- * `@mastra/core/agent-builder/ee` subpath. That subpath only ships in
- * `@mastra/core >= 1.34.0`; deploys whose bundled `@mastra/server` resolves
- * against an older core would otherwise crash at startup with
- * `ERR_MODULE_NOT_FOUND` on `@mastra/core/dist/agent-builder/ee/index.js`.
- */
+/** Recognition for the stable Agent Builder model-policy error wire code. */
 const MODEL_NOT_ALLOWED_CODE = 'MODEL_NOT_ALLOWED';
 
 interface ModelNotAllowedErrorLike extends Error {

@@ -135,7 +135,7 @@ export const builderPickerSchema = z.object({
  * Derived `BuilderModelPolicy`. Server-owned shape so the playground hook is a
  * thin selector and the UI never re-derives policy from `features` / `configuration`.
  *
- * Mirrors `BuilderModelPolicy` from `@mastra/core/agent-builder/ee`:
+ * Mirrors `BuilderModelPolicy` from `@mastra/core/editor`:
  * - `active: false` ⇒ all other fields ignored.
  * - `active: true` + `pickerVisible: false` (locked) ⇒ `default` set in valid configs.
  * - `allowed`/`default` are passed through verbatim when present.
@@ -226,7 +226,7 @@ export const infrastructureStatusResponseSchema = z.object({
  *
  * Same provider shape as GET /agents/providers, but each provider's `models`
  * list is already filtered by the active builder model policy (server applies
- * the EE allowlist). Providers with no allowed models are omitted entirely so
+ * the configured allowlist). Providers with no allowed models are omitted entirely so
  * the Studio model picker can render the response verbatim.
  */
 export const builderAvailableModelsResponseSchema = z.object({
