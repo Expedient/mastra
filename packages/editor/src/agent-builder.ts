@@ -391,6 +391,19 @@ function storedModels(model: StorageCreateAgentInput['model']): StorageModelConf
   return model ? [model] : [];
 }
 
+function createModelNotAllowedError(
+  message: string,
+  allowed: BuilderProviderModelEntry[],
+  attempted: { provider: string; modelId?: string },
+): Error {
+  return Object.assign(new Error(message), {
+    code: 'MODEL_NOT_ALLOWED' as const,
+    allowed,
+    attempted,
+    offendingLabel: 'model',
+  });
+}
+
 /** Enforce administrator model allowlists and locked model selection for direct SDK creates. */
 export function assertBuilderAgentModelPolicy(
   input: StorageCreateAgentInput,
@@ -403,10 +416,18 @@ export function assertBuilderAgentModelPolicy(
   for (const model of storedModels(input.model)) {
     const candidate = { provider: model.provider, modelId: model.name };
     if (!isModelAllowed(models.allowed, candidate)) {
-      throw new Error(`Model "${model.provider}/${model.name}" is not allowed by the Agent Builder model policy`);
+      throw createModelNotAllowedError(
+        `Model "${model.provider}/${model.name}" is not allowed by the Agent Builder model policy`,
+        models.allowed ?? [],
+        candidate,
+      );
     }
     if (features.model === false && models.default && !isModelAllowed([models.default], candidate)) {
-      throw new Error(`Model "${model.provider}/${model.name}" does not match the locked Agent Builder default model`);
+      throw createModelNotAllowedError(
+        `Model "${model.provider}/${model.name}" does not match the locked Agent Builder default model`,
+        [models.default],
+        candidate,
+      );
     }
   }
 }

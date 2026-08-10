@@ -280,7 +280,13 @@ describe('builder model and picker policies', () => {
         instructions: 'Do not persist',
         model: { provider: 'evil/openai', name: 'gpt-5.4-mini' },
       }),
-    ).rejects.toThrow(/not allowed/i);
+    ).rejects.toMatchObject({
+      code: 'MODEL_NOT_ALLOWED',
+      message: expect.stringMatching(/not allowed/i),
+      allowed: [{ provider: 'openai' }],
+      attempted: { provider: 'evil/openai', modelId: 'gpt-5.4-mini' },
+      offendingLabel: 'model',
+    });
     await expect((await storage.getStore('agents'))?.getById('evil-provider')).resolves.toBeNull();
 
     const lockedEditor = new MastraEditor({
@@ -305,7 +311,13 @@ describe('builder model and picker policies', () => {
         instructions: 'Must use default',
         model: { provider: 'openai', name: 'gpt-5.4' },
       }),
-    ).rejects.toThrow(/locked/i);
+    ).rejects.toMatchObject({
+      code: 'MODEL_NOT_ALLOWED',
+      message: expect.stringMatching(/locked/i),
+      allowed: [{ provider: 'openai', modelId: 'gpt-5.4-mini' }],
+      attempted: { provider: 'openai', modelId: 'gpt-5.4' },
+      offendingLabel: 'model',
+    });
   });
 
   it('rejects locked model configuration without a default', async () => {

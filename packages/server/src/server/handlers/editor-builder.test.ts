@@ -1,5 +1,4 @@
-import type { IAgentBuilder } from '@mastra/core/agent-builder/ee';
-import type { IMastraEditor } from '@mastra/core/editor';
+import type { IAgentBuilder, IMastraEditor } from '@mastra/core/editor';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {

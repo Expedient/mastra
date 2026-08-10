@@ -1,5 +1,4 @@
-import type { IAgentBuilder } from '@mastra/core/agent-builder/ee';
-import type { IMastraEditor } from '@mastra/core/editor';
+import type { IAgentBuilder, IMastraEditor } from '@mastra/core/editor';
 import { RequestContext } from '@mastra/core/request-context';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -101,7 +100,7 @@ function createCtx(mastra: ReturnType<typeof createMastra>, callerId: string | n
 // Tests
 // =============================================================================
 
-describe('Favorite route EE gating', () => {
+describe('Favorite route Builder gating', () => {
   it('PUT /stored/agents/:id/favorite → 404 when favorites feature disabled', async () => {
     const agents = new Map<string, MockRecord>([['a1', { id: 'a1', visibility: 'public' }]]);
     const mastra = createMastra({ agents, editor: createBuilder({ favorites: false }) });

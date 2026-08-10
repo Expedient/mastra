@@ -128,12 +128,11 @@ The `builder` field enables the [Agent Builder](https://agent-builder.mastra.ai/
 
 ### Registering the Builder agent
 
-The Builder UI runs against an agent created by the `createBuilderAgent()` factory from `@mastra/editor/ee`. Import the factory, invoke it, and register the returned agent under `agents` on your Mastra instance:
+The Builder UI runs against an agent created by the `createBuilderAgent()` factory from `@mastra/editor`. Import the factory, invoke it, and register the returned agent under `agents` on your Mastra instance:
 
 ```typescript filename="src/mastra/index.ts"
 import { Mastra } from '@mastra/core'
-import { MastraEditor } from '@mastra/editor'
-import { createBuilderAgent } from '@mastra/editor/ee'
+import { createBuilderAgent, MastraEditor } from '@mastra/editor'
 
 export const mastra = new Mastra({
   agents: { builderAgent: createBuilderAgent() },
@@ -143,7 +142,7 @@ export const mastra = new Mastra({
 })
 ```
 
-The key name (`builderAgent`) is conventional. Any key works. The `@mastra/editor/ee` subpath is gated by the Mastra Enterprise Edition license at runtime.
+The key name (`builderAgent`) is conventional. Any key works.
 
 See the [Agent Builder overview](https://agent-builder.mastra.ai/#prerequisites) for the full setup checklist.
 

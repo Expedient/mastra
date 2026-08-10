@@ -1,25 +1,106 @@
-import type { BuilderModelPolicy } from '@mastra/core/agent-builder/ee';
-import type { IMastraEditor } from '@mastra/core/editor';
+import type {
+  BuilderAgentConfiguration,
+  BuilderModelPolicy,
+  BuilderProviderModelEntry,
+  IAgentBuilder,
+  IMastraEditor,
+} from '@mastra/core/editor';
 
-/**
- * Server-side wrapper around `builderToModelPolicy`.
- *
- * Handles the optional `IMastraEditor` builder API surface (older / OSS editors
- * may not implement `hasEnabledBuilderConfig` / `resolveBuilder`) and returns
- * a uniform `BuilderModelPolicy` to every call site.
- *
- * Returns `{ active: false }` whenever:
- * - no editor is configured,
- * - the editor doesn't expose builder methods,
- * - the builder config is disabled, or
- * - resolving the builder fails / yields nothing.
- *
- * The `@mastra/core/agent-builder/ee` subpath is loaded lazily so this module
- * remains importable on `@mastra/core` versions that pre-date the subpath
- * (the subpath was added in core 1.34.0). The dynamic import is only reached
- * once an editor is actually configured, by which point a compatible core is
- * guaranteed.
- */
+const TRUSTED_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
+  'openai.chat': 'openai',
+};
+
+function normalizeProvider(provider: string): string {
+  return TRUSTED_PROVIDER_ALIASES[provider] ?? provider;
+}
+
+/** Match a runtime model against a Builder provider/model allowlist. */
+export function isBuilderModelAllowed(
+  allowed: BuilderProviderModelEntry[] | undefined,
+  model: { provider: string; modelId?: string },
+): boolean {
+  if (allowed === undefined) return true;
+  return allowed.some(entry => {
+    if (normalizeProvider(model.provider) !== normalizeProvider(entry.provider)) return false;
+    return entry.modelId === undefined || entry.modelId === model.modelId;
+  });
+}
+
+/** Convert the configured Builder model slice into the server response contract. */
+export function toBuilderModelPolicy(builder: IAgentBuilder | undefined): BuilderModelPolicy {
+  if (!builder?.enabled) return { active: false };
+  const models = builder.getConfiguration().agent?.models;
+  if (!models) return { active: false };
+
+  return {
+    active: true,
+    pickerVisible: builder.getFeatures().agent.model !== false,
+    ...(models.allowed !== undefined ? { allowed: models.allowed } : {}),
+    ...(models.default !== undefined ? { default: models.default } : {}),
+  };
+}
+
+export interface BuilderPickerVisibility {
+  visibleTools: string[] | null;
+  visibleAgents: string[] | null;
+  visibleWorkflows: string[] | null;
+  warnings: string[];
+}
+
+export interface ResolveBuilderPickerVisibilityOptions {
+  config?: Pick<BuilderAgentConfiguration, 'tools' | 'agents' | 'workflows'>;
+  registeredToolIds?: string[];
+  registeredAgentIds?: string[];
+  registeredWorkflowIds?: string[];
+}
+
+function resolveAllowedIds(
+  kind: 'tools' | 'agents' | 'workflows',
+  allowed: string[] | undefined,
+  registered: string[],
+  warnings: string[],
+): string[] | null {
+  if (allowed === undefined) return null;
+  const registeredSet = new Set(registered);
+  const visible: string[] = [];
+  const seen = new Set<string>();
+
+  for (const id of allowed) {
+    if (!registeredSet.has(id)) {
+      warnings.push(`Builder ${kind} allowlist references unknown id "${id}".`);
+    } else if (!seen.has(id)) {
+      seen.add(id);
+      visible.push(id);
+    }
+  }
+
+  return visible;
+}
+
+/** Resolve route-specific picker IDs and warnings against the current registries. */
+export function resolveBuilderPickerVisibility(
+  options: ResolveBuilderPickerVisibilityOptions,
+): BuilderPickerVisibility {
+  const warnings: string[] = [];
+  return {
+    visibleTools: resolveAllowedIds('tools', options.config?.tools?.allowed, options.registeredToolIds ?? [], warnings),
+    visibleAgents: resolveAllowedIds(
+      'agents',
+      options.config?.agents?.allowed,
+      options.registeredAgentIds ?? [],
+      warnings,
+    ),
+    visibleWorkflows: resolveAllowedIds(
+      'workflows',
+      options.config?.workflows?.allowed,
+      options.registeredWorkflowIds ?? [],
+      warnings,
+    ),
+    warnings,
+  };
+}
+
+/** Resolve an optional editor's active Builder model policy for server routes. */
 export async function resolveBuilderModelPolicy(editor: IMastraEditor | undefined): Promise<BuilderModelPolicy> {
   if (!editor) return { active: false };
   if (typeof editor.resolveBuilder !== 'function') return { active: false };
@@ -31,9 +112,7 @@ export async function resolveBuilderModelPolicy(editor: IMastraEditor | undefine
   // rejection escape: agent execution routes seed this on every request, so a
   // transient failure must not 500 the entire route.
   try {
-    const builder = await editor.resolveBuilder();
-    const { builderToModelPolicy } = await import('@mastra/core/agent-builder/ee');
-    return builderToModelPolicy(builder);
+    return toBuilderModelPolicy(await editor.resolveBuilder());
   } catch {
     return { active: false };
   }

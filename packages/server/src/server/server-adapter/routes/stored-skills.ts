@@ -17,7 +17,7 @@ export const STORED_SKILLS_ROUTES = [
   DELETE_STORED_SKILL_ROUTE,
   // Publish
   PUBLISH_STORED_SKILL_ROUTE,
-  // Favorites (EE)
+  // Favorites (Builder)
   FAVORITE_STORED_SKILL_ROUTE,
   UNFAVORITE_STORED_SKILL_ROUTE,
 ] as const;

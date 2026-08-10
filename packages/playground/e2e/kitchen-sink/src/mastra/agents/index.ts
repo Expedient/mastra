@@ -1,6 +1,6 @@
 import { Agent } from '@mastra/core/agent';
 import { createTool } from '@mastra/core/tools';
-import { createBuilderAgent } from '@mastra/editor/ee';
+import { createBuilderAgent } from '@mastra/editor';
 import { Extractor, Memory } from '@mastra/memory';
 
 export { askUserAgent } from './ask-user-agent';

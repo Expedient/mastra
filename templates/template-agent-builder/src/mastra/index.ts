@@ -1,7 +1,6 @@
 import { Mastra } from '@mastra/core/mastra';
-import { MastraEditor } from '@mastra/editor';
+import { createBuilderAgent, MastraEditor } from '@mastra/editor';
 import { ComposioToolProvider } from '@mastra/editor/composio';
-import { createBuilderAgent } from '@mastra/editor/ee';
 import { LibSQLStore } from '@mastra/libsql';
 import { Observability, DefaultExporter, SensitiveDataFilter } from '@mastra/observability';
 import { SlackProvider } from '@mastra/slack';
