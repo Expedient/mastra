@@ -9,7 +9,7 @@ const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const removedSubpaths = [
   ['@mastra', 'core', 'agent-builder', 'ee'].join('/'),
   ['@mastra', 'editor', 'ee'].join('/'),
-  ['@mastra', 'playground-ui', 'ee'].join('/'),
+  ['@mastra', 'playground-ui', 'ee', 'signals'].join('/'),
 ];
 const removedSubpathSet = new Set(removedSubpaths);
 const sourceExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
@@ -62,7 +62,10 @@ type Offender = {
 };
 
 function findActiveImports(filePath: string): Offender[] {
-  const sourceText = fs.readFileSync(filePath, 'utf8');
+  return findActiveImportsInSource(filePath, fs.readFileSync(filePath, 'utf8'));
+}
+
+function findActiveImportsInSource(filePath: string, sourceText: string): Offender[] {
   if (!removedSubpaths.some(specifier => sourceText.includes(specifier))) return [];
 
   const source = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKind(filePath));
@@ -103,6 +106,11 @@ function findActiveImports(filePath: string): Offender[] {
   return offenders;
 }
 
+const importFixtures = removedSubpaths.map(specifier => ({
+  specifier,
+  source: [`import * as removed from '${specifier}';`, `void import('${specifier}');`].join('\n'),
+}));
+
 describe('removed package subpaths', () => {
   it('have no active imports in source files', () => {
     const offenders = findSourceFiles(repoRoot).flatMap(findActiveImports);
@@ -113,5 +121,16 @@ describe('removed package subpaths', () => {
         .map(offender => `  ${offender.file}:${offender.line} (${offender.importKind}) ${offender.specifier}`)
         .join('\n')}`,
     ).toEqual([]);
+  });
+
+  it.each(importFixtures)('detects static and dynamic imports for $specifier', ({ specifier, source }) => {
+    const offenders = findActiveImportsInSource(path.join(repoRoot, 'removed-ee-import-fixture.ts'), source);
+
+    expect(
+      offenders.map(({ importKind, specifier: foundSpecifier }) => ({ importKind, specifier: foundSpecifier })),
+    ).toEqual([
+      { importKind: 'import', specifier },
+      { importKind: 'dynamic import', specifier },
+    ]);
   });
 });
