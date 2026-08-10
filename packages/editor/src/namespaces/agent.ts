@@ -41,7 +41,7 @@ import { RequestContext } from '@mastra/core/request-context';
 import { resolveStoredToolProviders } from '@mastra/core/tool-provider';
 import type { ToolProviders } from '@mastra/core/tool-provider';
 
-import { applyBuilderAgentDefaults } from '../agent-builder';
+import { applyBuilderAgentDefaults, assertBuilderAgentModelPolicy } from '../agent-builder';
 import { evaluateRuleGroup } from '../rule-evaluator';
 import { resolveInstructionBlocks } from '../instruction-builder';
 import { hydrateProcessorGraph, selectFirstMatchingGraph } from '../processor-graph-hydrator';
@@ -237,6 +237,9 @@ export class EditorAgentNamespace extends CrudEditorNamespace<
 
     const builder = await this.editor.resolveBuilder();
     const resolvedInput = builder?.enabled ? applyBuilderAgentDefaults(input, builder.getConfiguration().agent) : input;
+    if (builder?.enabled) {
+      assertBuilderAgentModelPolicy(resolvedInput, builder.getConfiguration().agent, builder.getFeatures().agent);
+    }
 
     await this.ensureStoredWorkspace(resolvedInput.workspace as StorageWorkspaceRef | undefined);
     return super.create(resolvedInput);

@@ -4,6 +4,7 @@ import type { MastraScorer } from '../evals';
 import type { IMastraLogger } from '../logger';
 import type { Mastra } from '../mastra';
 import type { MCPServerBase } from '../mcp';
+import type { SerializedMemoryConfig } from '../memory';
 import type { ProcessorProvider } from '../processor-provider';
 import type { RequestContext } from '../request-context';
 import type { BlobStore } from '../storage/domains/blobs/base';
@@ -50,6 +51,8 @@ import type {
   StorageListSkillsInput,
   StorageListSkillsOutput,
   StorageResolvedSkillType,
+  StorageBrowserRef,
+  StorageWorkspaceRef,
   StorageListSkillsResolvedOutput,
 } from '../storage/types';
 import type { ToolProvider } from '../tool-provider';
@@ -210,6 +213,9 @@ export interface BuilderAgentConfiguration {
   tools?: BuilderPickerAllowlist;
   agents?: BuilderPickerAllowlist;
   workflows?: BuilderPickerAllowlist;
+  memory?: SerializedMemoryConfig;
+  browser?: StorageBrowserRef;
+  workspace?: StorageWorkspaceRef;
   [key: string]: unknown;
 }
 
@@ -268,7 +274,7 @@ export interface MastraEditorConfig {
    * @example { [myCloudProvider.id]: myCloudProvider }
    */
   workspaces?: Record<string, WorkspaceProvider>;
-  /** Agent Builder configuration. The Builder is dormant unless `enabled` is true. */
+  /** Agent Builder configuration. The Builder is enabled when present unless `enabled` is false. */
   builder?: AgentBuilderOptions;
   /**
    * Source of truth for agent overrides — controls how they are persisted and

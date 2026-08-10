@@ -1,3 +1,4 @@
+import { Memory } from '@mastra/memory';
 import { Agent } from '@mastra/core/agent';
 import type { AgentConfig } from '@mastra/core/agent';
 import type {
@@ -12,11 +13,13 @@ import { PROVIDER_REGISTRY } from '@mastra/core/llm';
 import type { IMastraLogger } from '@mastra/core/logger';
 import { PrefillErrorHandler, ProviderHistoryCompat, StreamErrorRetryProcessor } from '@mastra/core/processors';
 import type { ErrorProcessorOrWorkflow } from '@mastra/core/processors';
-import type { StorageCreateAgentInput } from '@mastra/core/storage';
+import type { StorageCreateAgentInput, StorageModelConfig } from '@mastra/core/storage';
 
 const BUILDER_AGENT_ID = 'builder-agent';
-const BUILDER_AGENT_NAME = 'Builder Agent';
+const BUILDER_AGENT_NAME = 'Agent Builder';
 const BUILDER_AGENT_DESCRIPTION = 'Helps create and configure Mastra agents.';
+const BUILDER_AGENT_MODEL = 'openai/gpt-5.6-sol';
+const BUILDER_OBSERVATIONAL_MEMORY_MODEL = 'openai/gpt-5.4-mini';
 
 const BUILDER_AGENT_INSTRUCTIONS = `You help users configure a Mastra agent.
 Use the available configuration tools to apply requested changes. Treat the current agent configuration supplied with each request as authoritative. Ask a concise follow-up only when a required choice is missing, and do not claim a change was made unless the matching tool succeeded.`;
@@ -29,7 +32,7 @@ const DEFAULT_AGENT_OPTIONS = {
 
 export const BUILDER_BASELINE_DEFAULTS: BuilderAgentConfiguration = {
   memory: {
-    observationalMemory: { model: 'openai/gpt-5-mini' },
+    observationalMemory: { model: BUILDER_OBSERVATIONAL_MEMORY_MODEL },
   },
 };
 
@@ -72,25 +75,23 @@ function mergeRecords<T>(...records: Array<object | undefined>): T {
   ) as T;
 }
 
+const TRUSTED_PROVIDER_ALIASES: Readonly<Record<string, string>> = {
+  'openai.chat': 'openai',
+};
+
 function normalizeProvider(provider: string): string {
-  return provider.endsWith('.chat') ? provider.slice(0, -'.chat'.length) : provider;
+  return TRUSTED_PROVIDER_ALIASES[provider] ?? provider;
 }
 
 function providersMatch(modelProvider: string, configuredProvider: string): boolean {
-  const model = normalizeProvider(modelProvider);
-  const configured = normalizeProvider(configuredProvider);
-  if (model === configured) return true;
-  if (configured.includes('/')) return false;
-
-  const parts = model.split('/');
-  return parts.length === 2 && parts[1] === configured;
+  return normalizeProvider(modelProvider) === normalizeProvider(configuredProvider);
 }
 
 export function isModelAllowed(
   allowed: BuilderProviderModelEntry[] | undefined,
   model: { provider: string; modelId?: string },
 ): boolean {
-  if (!allowed?.length) return true;
+  if (allowed === undefined) return true;
   return allowed.some(entry => {
     if (!providersMatch(model.provider, entry.provider)) return false;
     return entry.modelId === undefined || entry.modelId === model.modelId;
@@ -113,10 +114,7 @@ function validateModelEntry(entry: BuilderProviderModelEntry, label: string, req
 }
 
 function knownProvider(provider: string): boolean {
-  const normalized = normalizeProvider(provider);
-  if (normalized in PROVIDER_REGISTRY) return true;
-  if (normalized.includes('/')) return false;
-  return Object.keys(PROVIDER_REGISTRY).some(id => id.split('/').length === 2 && id.split('/')[1] === normalized);
+  return normalizeProvider(provider) in PROVIDER_REGISTRY;
 }
 
 function validateModels(
@@ -163,24 +161,46 @@ function validateModels(
 function resolveFeatures(
   options: AgentBuilderOptions,
   configuration: BuilderAgentConfiguration,
-  logger?: IMastraLogger,
-): BuilderAgentFeatures {
+  browserProviders: ReadonlyMap<string, unknown>,
+): { features: BuilderAgentFeatures; warnings: string[] } {
   const configured = options.features?.agent ?? {};
-  const resolved = Object.fromEntries(
+  const features = Object.fromEntries(
     FEATURE_KEYS.map(key => [key, configured[key] ?? true]),
   ) as unknown as BuilderAgentFeatures;
-  const hasBrowser = Boolean(configuration.browser);
+  const warnings: string[] = [];
+  const browser = configuration.browser as unknown;
 
-  if (configured.browser === true && !hasBrowser) {
-    logger?.warn(
-      '[mastra:editor] Agent Builder browser feature was enabled without configuration.agent.browser; hiding browser controls.',
-    );
-    resolved.browser = false;
-  } else if (configured.browser === undefined) {
-    resolved.browser = hasBrowser;
+  let browserProvider: string | undefined;
+  if (
+    isPlainObject(browser) &&
+    browser.type === 'inline' &&
+    isPlainObject(browser.config) &&
+    typeof browser.config.provider === 'string' &&
+    browser.config.provider.trim() !== ''
+  ) {
+    browserProvider = browser.config.provider;
   }
 
-  return resolved;
+  if (browser !== undefined && browserProvider === undefined) {
+    warnings.push(
+      'configuration.agent.browser must be an inline browser config with a non-empty provider; hiding browser controls.',
+    );
+    features.browser = false;
+  } else if (browserProvider !== undefined && !browserProviders.has(browserProvider)) {
+    warnings.push(
+      `configuration.agent.browser uses unregistered provider "${browserProvider}"; hiding browser controls.`,
+    );
+    features.browser = false;
+  } else if (browserProvider === undefined) {
+    if (configured.browser === true) {
+      warnings.push(
+        'Agent Builder browser feature was enabled without configuration.agent.browser; hiding browser controls.',
+      );
+    }
+    features.browser = false;
+  }
+
+  return { features, warnings };
 }
 
 export class EditorAgentBuilder implements IAgentBuilder {
@@ -190,14 +210,26 @@ export class EditorAgentBuilder implements IAgentBuilder {
   readonly #registries: NonNullable<AgentBuilderOptions['registries']>;
   readonly #warnings: string[];
 
-  constructor(options: AgentBuilderOptions, logger?: IMastraLogger) {
-    this.enabled = options.enabled === true;
+  constructor(
+    options: AgentBuilderOptions,
+    logger?: IMastraLogger,
+    browserProviders: ReadonlyMap<string, unknown> = new Map(),
+  ) {
+    this.enabled = options.enabled !== false;
     const agentConfiguration = mergeRecords<BuilderAgentConfiguration>(
       BUILDER_BASELINE_DEFAULTS,
       options.configuration?.agent,
     );
-    const agentFeatures = resolveFeatures(options, agentConfiguration, logger);
-    const { warnings } = validateModels(agentConfiguration, agentFeatures);
+    const { features: agentFeatures, warnings: featureWarnings } = resolveFeatures(
+      options,
+      agentConfiguration,
+      browserProviders,
+    );
+    const { warnings: modelWarnings } = validateModels(agentConfiguration, agentFeatures);
+    const warnings = [...new Set([...featureWarnings, ...modelWarnings])];
+    for (const warning of warnings) {
+      logger?.warn(`[mastra:editor] ${warning}`);
+    }
 
     this.#features = { agent: agentFeatures };
     this.#configuration = { agent: agentConfiguration };
@@ -225,13 +257,12 @@ export class EditorAgentBuilder implements IAgentBuilder {
 export function builderToModelPolicy(builder: IAgentBuilder | undefined): BuilderModelPolicy {
   if (!builder?.enabled) return { active: false };
   const models = builder.getConfiguration().agent?.models;
-  if (!models) return { active: false };
 
   return {
     active: true,
     pickerVisible: builder.getFeatures().agent.model !== false,
-    ...(models.allowed !== undefined ? { allowed: models.allowed } : {}),
-    ...(models.default !== undefined ? { default: models.default } : {}),
+    ...(models?.allowed !== undefined ? { allowed: models.allowed } : {}),
+    ...(models?.default !== undefined ? { default: models.default } : {}),
   };
 }
 
@@ -295,38 +326,14 @@ function createDefaultErrorProcessors(): ErrorProcessorOrWorkflow[] {
   return [new StreamErrorRetryProcessor(), new PrefillErrorHandler(), new ProviderHistoryCompat()];
 }
 
-function mergeErrorProcessors(
-  defaults: ErrorProcessorOrWorkflow[],
-  configured: ErrorProcessorOrWorkflow[],
-): ErrorProcessorOrWorkflow[] {
-  if (configured.length === 0) return [];
-  const merged = [...defaults];
-  const indexById = new Map(merged.map((processor, index) => [processor.id, index]));
-
-  for (const processor of configured) {
-    const index = indexById.get(processor.id);
-    if (index === undefined) {
-      indexById.set(processor.id, merged.length);
-      merged.push(processor);
-    } else {
-      merged[index] = processor;
-    }
-  }
-  return merged;
-}
-
 export type CreateBuilderAgentConfig = Partial<Omit<AgentConfig, 'id' | 'name' | 'description'>>;
 
 export function createBuilderAgent(config: CreateBuilderAgentConfig = {}): Agent {
-  const defaults = createDefaultErrorProcessors();
-  const configuredErrorProcessors = config.errorProcessors;
-  const errorProcessors =
-    configuredErrorProcessors === undefined
-      ? defaults
-      : typeof configuredErrorProcessors === 'function'
-        ? async (args: Parameters<typeof configuredErrorProcessors>[0]) =>
-            mergeErrorProcessors(defaults, await configuredErrorProcessors(args))
-        : mergeErrorProcessors(defaults, configuredErrorProcessors);
+  const errorProcessors = config.errorProcessors ?? createDefaultErrorProcessors();
+  const memory =
+    config.memory === undefined
+      ? new Memory({ options: { observationalMemory: { model: BUILDER_OBSERVATIONAL_MEMORY_MODEL } } })
+      : config.memory;
 
   const configuredDefaultOptions = config.defaultOptions;
   const defaultOptions =
@@ -336,9 +343,10 @@ export function createBuilderAgent(config: CreateBuilderAgentConfig = {}): Agent
       : mergeRecords(DEFAULT_AGENT_OPTIONS, configuredDefaultOptions);
 
   return new Agent({
-    model: 'openai/gpt-5',
+    model: BUILDER_AGENT_MODEL,
     instructions: BUILDER_AGENT_INSTRUCTIONS,
     ...config,
+    memory,
     defaultOptions,
     errorProcessors,
     id: BUILDER_AGENT_ID,
@@ -354,10 +362,51 @@ function agentDefaults(configuration: BuilderAgentConfiguration | undefined): Re
   return Object.fromEntries(Object.entries(configuration).filter(([key]) => !AGENT_POLICY_FIELDS.has(key)));
 }
 
+function toStorageModelConfig(
+  model: NonNullable<NonNullable<BuilderAgentConfiguration['models']>['default']>,
+): StorageModelConfig {
+  return { provider: model.provider, name: model.modelId };
+}
+
 /** Apply portable defaults first and administrator-pinned defaults last. */
 export function applyBuilderAgentDefaults(
   input: StorageCreateAgentInput,
   configuration: BuilderAgentConfiguration | undefined,
 ): StorageCreateAgentInput {
-  return mergeRecords<StorageCreateAgentInput>(BUILDER_BASELINE_DEFAULTS, input, agentDefaults(configuration));
+  const resolved = mergeRecords<StorageCreateAgentInput>(
+    BUILDER_BASELINE_DEFAULTS,
+    input,
+    agentDefaults(configuration),
+  );
+  if (input.model === undefined && configuration?.models?.default) {
+    resolved.model = toStorageModelConfig(configuration.models.default);
+  }
+  return resolved;
+}
+
+function storedModels(model: StorageCreateAgentInput['model']): StorageModelConfig[] {
+  if (Array.isArray(model)) {
+    return model.map(variant => variant.value);
+  }
+  return model ? [model] : [];
+}
+
+/** Enforce administrator model allowlists and locked model selection for direct SDK creates. */
+export function assertBuilderAgentModelPolicy(
+  input: StorageCreateAgentInput,
+  configuration: BuilderAgentConfiguration | undefined,
+  features: Pick<Partial<BuilderAgentFeatures>, 'model'>,
+): void {
+  const models = configuration?.models;
+  if (!models) return;
+
+  for (const model of storedModels(input.model)) {
+    const candidate = { provider: model.provider, modelId: model.name };
+    if (!isModelAllowed(models.allowed, candidate)) {
+      throw new Error(`Model "${model.provider}/${model.name}" is not allowed by the Agent Builder model policy`);
+    }
+    if (features.model === false && models.default && !isModelAllowed([models.default], candidate)) {
+      throw new Error(`Model "${model.provider}/${model.name}" does not match the locked Agent Builder default model`);
+    }
+  }
 }

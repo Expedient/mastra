@@ -53,6 +53,7 @@ export {
   BUILDER_BASELINE_DEFAULTS,
   EditorAgentBuilder,
   applyBuilderAgentDefaults,
+  assertBuilderAgentModelPolicy,
   builderToModelPolicy,
   createBuilderAgent,
   isModelAllowed,
@@ -245,15 +246,15 @@ export class MastraEditor implements IMastraEditor {
     }
   }
 
-  /** Returns true only when Builder was explicitly enabled in editor configuration. */
+  /** Returns true when Builder configuration is present unless it is explicitly disabled. */
   hasEnabledBuilderConfig(): boolean {
-    return this.__builderConfig?.enabled === true;
+    return this.__builderConfig !== undefined && this.__builderConfig.enabled !== false;
   }
 
   /** Resolve the configured Builder. Resolution is lazy and cached. */
   async resolveBuilder(): Promise<IAgentBuilder | undefined> {
     if (!this.hasEnabledBuilderConfig()) return undefined;
-    this.__builder ??= new EditorAgentBuilder(this.__builderConfig!, this.__logger);
+    this.__builder ??= new EditorAgentBuilder(this.__builderConfig!, this.__logger, this.__browsers);
     return this.__builder;
   }
 
