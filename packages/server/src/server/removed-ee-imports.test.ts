@@ -1,0 +1,117 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import ts from 'typescript';
+import { describe, expect, it } from 'vitest';
+
+const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+const removedSubpaths = [
+  ['@mastra', 'core', 'agent-builder', 'ee'].join('/'),
+  ['@mastra', 'editor', 'ee'].join('/'),
+  ['@mastra', 'playground-ui', 'ee'].join('/'),
+];
+const removedSubpathSet = new Set(removedSubpaths);
+const sourceExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
+const skippedDirectories = new Set(['.git', '.next', '.turbo', 'coverage', 'dist', 'node_modules']);
+
+function isExcluded(relativePath: string): boolean {
+  const normalized = relativePath.split(path.sep).join('/');
+  return (
+    normalized === '.changeset' ||
+    normalized.startsWith('.changeset/') ||
+    /(?:^|\/)changelog(?:\.[^/]+)?$/i.test(normalized)
+  );
+}
+
+function findSourceFiles(directory: string): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const filePath = path.join(directory, entry.name);
+    const relativePath = path.relative(repoRoot, filePath);
+
+    if (entry.isDirectory()) {
+      if (skippedDirectories.has(entry.name) || isExcluded(relativePath)) return [];
+      return findSourceFiles(filePath);
+    }
+
+    if (!sourceExtensions.has(path.extname(entry.name)) || isExcluded(relativePath)) return [];
+    return [filePath];
+  });
+}
+
+function scriptKind(filePath: string): ts.ScriptKind {
+  switch (path.extname(filePath)) {
+    case '.tsx':
+      return ts.ScriptKind.TSX;
+    case '.jsx':
+      return ts.ScriptKind.JSX;
+    case '.js':
+    case '.mjs':
+    case '.cjs':
+      return ts.ScriptKind.JS;
+    default:
+      return ts.ScriptKind.TS;
+  }
+}
+
+type Offender = {
+  file: string;
+  line: number;
+  importKind: 'import' | 'dynamic import' | 'require';
+  specifier: string;
+};
+
+function findActiveImports(filePath: string): Offender[] {
+  const sourceText = fs.readFileSync(filePath, 'utf8');
+  if (!removedSubpaths.some(specifier => sourceText.includes(specifier))) return [];
+
+  const source = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKind(filePath));
+  const offenders: Offender[] = [];
+
+  const record = (node: ts.Node, moduleSpecifier: ts.StringLiteral, importKind: Offender['importKind']) => {
+    if (!removedSubpathSet.has(moduleSpecifier.text)) return;
+    offenders.push({
+      file: path.relative(repoRoot, filePath).split(path.sep).join('/'),
+      line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+      importKind,
+      specifier: moduleSpecifier.text,
+    });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      record(node, node.moduleSpecifier, 'import');
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      ts.isStringLiteral(node.moduleReference.expression)
+    ) {
+      record(node, node.moduleReference.expression, 'import');
+    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) {
+      const [argument] = node.arguments;
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        record(node, argument, 'dynamic import');
+      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
+        record(node, argument, 'require');
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(source);
+  return offenders;
+}
+
+describe('removed package subpaths', () => {
+  it('have no active imports in source files', () => {
+    const offenders = findSourceFiles(repoRoot).flatMap(findActiveImports);
+
+    expect(
+      offenders,
+      `Found active imports of removed package subpaths:\n${offenders
+        .map(offender => `  ${offender.file}:${offender.line} (${offender.importKind}) ${offender.specifier}`)
+        .join('\n')}`,
+    ).toEqual([]);
+  });
+});

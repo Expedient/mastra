@@ -213,7 +213,7 @@ export const GET_EDITOR_BUILDER_AVAILABLE_MODELS_ROUTE = createRoute({
       const policy = await resolveBuilderModelPolicy(mastra.getEditor());
 
       // Inactive policy (or no allowlist) ⇒ no allowlist filtering to apply.
-      if (!policy.active || !policy.allowed || policy.allowed.length === 0) {
+      if (!policy.active || policy.allowed === undefined) {
         return { providers };
       }
 

@@ -30,13 +30,12 @@ export function isBuilderModelAllowed(
 export function toBuilderModelPolicy(builder: IAgentBuilder | undefined): BuilderModelPolicy {
   if (!builder?.enabled) return { active: false };
   const models = builder.getConfiguration().agent?.models;
-  if (!models) return { active: false };
 
   return {
     active: true,
     pickerVisible: builder.getFeatures().agent.model !== false,
-    ...(models.allowed !== undefined ? { allowed: models.allowed } : {}),
-    ...(models.default !== undefined ? { default: models.default } : {}),
+    ...(models?.allowed !== undefined ? { allowed: models.allowed } : {}),
+    ...(models?.default !== undefined ? { default: models.default } : {}),
   };
 }
 
