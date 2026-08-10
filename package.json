@@ -33,6 +33,8 @@
     "changeset": "pnpm --filter @internal/changeset-cli start",
     "changeset-cli": "changeset",
     "ci:publish": "pnpm publish -r",
+    "fork-release:test": "node --test scripts/fork-release/test/release-gate.test.mjs",
+    "fork-release:static": "node scripts/fork-release/release-gate.mjs static",
     "build": "pnpm turbo build --filter \"!./examples/*\" --filter \"!./examples/**/*\"",
     "build:server-adapters": "pnpm turbo build --filter \"./server-adapters/*\"",
     "build:integrations": "pnpm turbo build --filter \"./integrations/*\"",

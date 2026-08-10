@@ -1,0 +1,29 @@
+{
+  "$schema": "./schemas/policy.schema.json",
+  "schemaVersion": 1,
+  "prohibitedModuleSpecifiers": [
+    "@internal/auth/ee",
+    "@mastra/core/agent-builder/ee",
+    "@mastra/core/auth/ee",
+    "@mastra/editor/ee",
+    "@mastra/playground-ui/ee"
+  ],
+  "prohibitedPackageNames": [],
+  "prohibitedSourcePathSegments": [
+    "packages/_internals/auth/src/ee",
+    "packages/core/src/agent-builder/ee",
+    "packages/core/src/auth/ee",
+    "packages/editor/src/ee",
+    "packages/playground/src/ee",
+    "packages/playground-ui/src/ee"
+  ],
+  "prohibitedBundleTokens": [
+    "@internal/auth/ee",
+    "@mastra/core/agent-builder/ee",
+    "@mastra/core/auth/ee",
+    "@mastra/editor/ee",
+    "@mastra/playground-ui/ee"
+  ],
+  "deniedLicenseExpressions": [],
+  "scanExcludedPrefixes": [".changeset"]
+}

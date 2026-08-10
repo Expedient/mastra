@@ -1,0 +1,210 @@
+{
+  "$schema": "./schemas/commercial-connection-audit.schema.json",
+  "schemaVersion": 1,
+  "auditedBase": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+  "approvedMigrationTip": "b23d4277e12e30816e154401d9d1e012d5d383e1",
+  "connectionPoints": [
+    {
+      "id": "CP-01",
+      "connectionType": "package-export",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground-ui/package.json" }
+      ],
+      "disposition": "remove",
+      "replacementPaths": ["packages/playground-ui/package.json"],
+      "replacementRegressionCheck": "dependency graph rejects restoration of @mastra/playground-ui/ee exports",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-02",
+      "connectionType": "build-entry",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground-ui/vite.config.ts" }
+      ],
+      "disposition": "remove",
+      "replacementPaths": ["packages/playground-ui/vite.config.ts"],
+      "replacementRegressionCheck": "built bundle and prohibited source-path scans reject EE UI entries",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-03",
+      "connectionType": "application-route",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground/src/App.tsx" }
+      ],
+      "disposition": "remove",
+      "replacementPaths": ["packages/playground/src/App.tsx", "packages/playground/src/lib/nav/nav-items.tsx"],
+      "replacementRegressionCheck": "active source and source-path scans reject retired Signals UI wiring",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-04",
+      "connectionType": "package-export",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/package.json" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/package.json", "packages/core/src/editor/index.ts"],
+      "replacementRegressionCheck": "dependency graph rejects @mastra/core/agent-builder/ee while public editor types remain exported",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-05",
+      "connectionType": "build-entry",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/tsdown.config.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/tsdown.config.ts", "packages/core/src/editor/types.ts"],
+      "replacementRegressionCheck": "bundle scan rejects the retired builder subpath and editor type tests preserve the native interface",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-06",
+      "connectionType": "type-import",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/editor/types.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/src/editor/types.ts", "packages/editor/src/agent-builder.test.ts"],
+      "replacementRegressionCheck": "active import scan rejects the EE type bridge and Agent Builder tests cover the OSS contract",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-07",
+      "connectionType": "package-export",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/package.json" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/editor/package.json", "packages/editor/src/index.ts"],
+      "replacementRegressionCheck": "dependency graph rejects @mastra/editor/ee and the root editor export provides native Builder APIs",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-08",
+      "connectionType": "build-entry-and-assets",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/tsdown.config.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/editor/tsdown.config.ts", "packages/editor/src/agent-builder.ts"],
+      "replacementRegressionCheck": "built artifact scan rejects retired EE entries while the native Builder implementation is bundled",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-09",
+      "connectionType": "runtime-loader",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/src/index.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/editor/src/index.ts", "packages/editor/src/agent-builder.test.ts"],
+      "replacementRegressionCheck": "native resolveBuilder tests replace the former dynamic commercial loader",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-10",
+      "connectionType": "internal-package-export",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/_internals/auth/package.json" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/_internals/auth/package.json", "packages/_internals/auth/src/authorization.ts"],
+      "replacementRegressionCheck": "dependency graph rejects @internal/auth/ee and exposes authorization as an OSS subpath",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-11",
+      "connectionType": "provider-imports",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "auth/workos/src/rbac-provider.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["auth/workos/src/rbac-provider.ts", "auth/workos/src/rbac-provider.test.ts"],
+      "replacementRegressionCheck": "active import scan plus WorkOS wildcard RBAC regression tests cover provider migration",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-12",
+      "connectionType": "package-export",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/package.json" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/package.json", "packages/core/src/auth/authorization.ts"],
+      "replacementRegressionCheck": "dependency graph rejects @mastra/core/auth/ee and exposes auth/authorization",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-13",
+      "connectionType": "build-entry",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/auth/ee/index.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/tsdown.config.ts", "packages/core/src/auth/authorization.ts"],
+      "replacementRegressionCheck": "bundle scan rejects auth/ee literals and authorization tests cover the OSS entry",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-14",
+      "connectionType": "runtime-authorization-imports",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/workflows/workflow.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": ["packages/core/src/workflows/workflow.ts", "packages/core/src/auth/authorization.test.ts"],
+      "replacementRegressionCheck": "active import scan and core authorization tests protect workflow FGA behavior",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-15",
+      "connectionType": "server-authorization-import",
+      "historySources": [
+        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/server/src/server/auth/helpers.ts" }
+      ],
+      "disposition": "replace",
+      "replacementPaths": [
+        "packages/server/src/server/auth/helpers.ts",
+        "packages/server/src/server/handlers/auth.test.ts"
+      ],
+      "replacementRegressionCheck": "active import scan and server auth handler tests preserve authorization behavior",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-16",
+      "connectionType": "server-dynamic-import",
+      "historySources": [
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/server/src/server/handlers/editor-builder.ts"
+        }
+      ],
+      "disposition": "replace",
+      "replacementPaths": [
+        "packages/server/src/server/handlers/editor-builder.ts",
+        "packages/server/src/server/handlers/editor-builder.test.ts"
+      ],
+      "replacementRegressionCheck": "removed-import guard and Builder handler tests reject dynamic EE loading while preserving policy behavior",
+      "evidenceStatus": "verified"
+    },
+    {
+      "id": "CP-17",
+      "connectionType": "consumer-import",
+      "historySources": [
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts"
+        }
+      ],
+      "disposition": "replace",
+      "replacementPaths": [
+        ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts",
+        "packages/server/src/server/removed-ee-imports.test.ts"
+      ],
+      "replacementRegressionCheck": "repository-wide active source scan and removed-import fixtures reject stale consumer imports",
+      "evidenceStatus": "verified"
+    }
+  ]
+}

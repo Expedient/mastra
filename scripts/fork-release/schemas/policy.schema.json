@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/fork-release-policy-v1.json",
+  "title": "Fork release policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "prohibitedModuleSpecifiers",
+    "prohibitedPackageNames",
+    "prohibitedSourcePathSegments",
+    "prohibitedBundleTokens",
+    "deniedLicenseExpressions",
+    "scanExcludedPrefixes"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "prohibitedModuleSpecifiers": { "$ref": "#/$defs/uniqueStrings" },
+    "prohibitedPackageNames": { "$ref": "#/$defs/uniqueStrings" },
+    "prohibitedSourcePathSegments": { "$ref": "#/$defs/uniqueStrings" },
+    "prohibitedBundleTokens": { "$ref": "#/$defs/uniqueStrings" },
+    "deniedLicenseExpressions": { "$ref": "#/$defs/uniqueStrings" },
+    "scanExcludedPrefixes": { "$ref": "#/$defs/uniqueStrings" }
+  },
+  "$defs": {
+    "uniqueStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  }
+}

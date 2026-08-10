@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/fork-release-evidence-v1.json",
+  "title": "Fork release evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "upstreamCommit",
+    "requiredFacts",
+    "artifact",
+    "sbom",
+    "provenance",
+    "licenseEvidence",
+    "networkEvidence",
+    "rollbackReference",
+    "signing",
+    "publication"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "upstreamCommit": { "$ref": "#/$defs/commit" },
+    "requiredFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commercialPackageNames", "commercialNetworkDestinations", "prohibitedLicenseExpressions"],
+      "properties": {
+        "commercialPackageNames": { "$ref": "#/$defs/resolvedFact" },
+        "commercialNetworkDestinations": { "$ref": "#/$defs/resolvedFact" },
+        "prohibitedLicenseExpressions": { "$ref": "#/$defs/resolvedFact" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "path", "sha256"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonempty" },
+        "version": { "$ref": "#/$defs/nonempty" },
+        "path": { "$ref": "#/$defs/nonempty" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "sbom": { "$ref": "#/$defs/evidenceFile" },
+    "provenance": { "$ref": "#/$defs/evidenceFile" },
+    "licenseEvidence": { "$ref": "#/$defs/evidenceFile" },
+    "networkEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capture", "allowlist"],
+      "properties": {
+        "capture": { "$ref": "#/$defs/evidenceFile" },
+        "allowlist": { "$ref": "#/$defs/evidenceFile" }
+      }
+    },
+    "rollbackReference": { "$ref": "#/$defs/nonempty" },
+    "signing": { "$ref": "#/$defs/completion" },
+    "publication": { "$ref": "#/$defs/completion" }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1 },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "resolvedFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value", "basis"],
+      "properties": {
+        "status": { "const": "resolved" },
+        "value": { "type": "array", "items": {} },
+        "basis": { "$ref": "#/$defs/nonempty" }
+      }
+    },
+    "evidenceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/nonempty" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reference", "rationale"],
+      "properties": {
+        "status": { "enum": ["completed", "not-applicable"] },
+        "reference": { "type": "string" },
+        "rationale": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "completed" } } },
+          "then": { "properties": { "reference": { "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "not-applicable" } } },
+          "then": { "properties": { "rationale": { "minLength": 1 } } }
+        }
+      ]
+    }
+  }
+}

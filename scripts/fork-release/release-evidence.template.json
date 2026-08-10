@@ -1,0 +1,61 @@
+{
+  "$schema": "./schemas/release-evidence.schema.json",
+  "schemaVersion": 1,
+  "upstreamCommit": "UNRESOLVED",
+  "requiredFacts": {
+    "commercialPackageNames": {
+      "status": "unresolved",
+      "value": [],
+      "basis": "UNRESOLVED: authoritative package ownership and license review required"
+    },
+    "commercialNetworkDestinations": {
+      "status": "unresolved",
+      "value": [],
+      "basis": "UNRESOLVED: authoritative runtime destination review required"
+    },
+    "prohibitedLicenseExpressions": {
+      "status": "unresolved",
+      "value": [],
+      "basis": "UNRESOLVED: counsel-approved license policy required"
+    }
+  },
+  "artifact": {
+    "name": "UNRESOLVED",
+    "version": "UNRESOLVED",
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED"
+  },
+  "sbom": {
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED"
+  },
+  "provenance": {
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED"
+  },
+  "licenseEvidence": {
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED"
+  },
+  "networkEvidence": {
+    "capture": {
+      "path": "UNRESOLVED",
+      "sha256": "UNRESOLVED"
+    },
+    "allowlist": {
+      "path": "UNRESOLVED",
+      "sha256": "UNRESOLVED"
+    }
+  },
+  "rollbackReference": "UNRESOLVED",
+  "signing": {
+    "status": "unresolved",
+    "reference": "UNRESOLVED",
+    "rationale": ""
+  },
+  "publication": {
+    "status": "unresolved",
+    "reference": "UNRESOLVED",
+    "rationale": ""
+  }
+}
