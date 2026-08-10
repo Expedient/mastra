@@ -164,6 +164,70 @@ export interface WorkspaceProvider<TConfig = Record<string, unknown>> {
   createWorkspace(config: TConfig): Workspace<any, any, any> | Promise<Workspace<any, any, any>>;
 }
 
+export type BuilderProviderModelEntry = {
+  provider: string;
+  modelId?: string;
+  kind?: 'custom';
+};
+
+export type BuilderDefaultModelEntry = BuilderProviderModelEntry & { modelId: string };
+
+export interface BuilderModelPolicy {
+  active: boolean;
+  pickerVisible?: boolean;
+  allowed?: BuilderProviderModelEntry[];
+  default?: BuilderDefaultModelEntry;
+}
+
+export interface BuilderPickerAllowlist {
+  allowed?: string[];
+}
+
+export interface BuilderAgentFeatures {
+  tools: boolean;
+  agents: boolean;
+  workflows: boolean;
+  scorers: boolean;
+  skills: boolean;
+  memory: boolean;
+  variables: boolean;
+  favorites: boolean;
+  avatarUpload: boolean;
+  browser: boolean;
+  model: boolean;
+}
+
+export type BuilderAgentFeatureOptions = Partial<BuilderAgentFeatures>;
+
+export interface BuilderAgentModelOptions {
+  allowed?: BuilderProviderModelEntry[];
+  default?: BuilderDefaultModelEntry;
+}
+
+/** Admin-owned defaults and picker policies for agents created through Builder. */
+export interface BuilderAgentConfiguration {
+  models?: BuilderAgentModelOptions;
+  tools?: BuilderPickerAllowlist;
+  agents?: BuilderPickerAllowlist;
+  workflows?: BuilderPickerAllowlist;
+  [key: string]: unknown;
+}
+
+export interface AgentBuilderOptions {
+  enabled?: boolean;
+  features?: { agent?: BuilderAgentFeatureOptions };
+  configuration?: { agent?: BuilderAgentConfiguration };
+  registries?: { skillsSh?: { enabled?: boolean } };
+}
+
+/** Minimal Builder surface consumed by Studio and server integrations. */
+export interface IAgentBuilder {
+  readonly enabled: boolean;
+  getFeatures(): { agent: BuilderAgentFeatureOptions };
+  getConfiguration(): { agent?: BuilderAgentConfiguration };
+  getRegistries?(): { skillsSh?: { enabled?: boolean } };
+  getModelPolicyWarnings?(): string[];
+}
 export interface MastraEditorConfig {
   logger?: IMastraLogger;
   /** Tool providers for integration tools (e.g., Composio) */
@@ -204,6 +268,8 @@ export interface MastraEditorConfig {
    * @example { [myCloudProvider.id]: myCloudProvider }
    */
   workspaces?: Record<string, WorkspaceProvider>;
+  /** Agent Builder configuration. The Builder is dormant unless `enabled` is true. */
+  builder?: AgentBuilderOptions;
   /**
    * Source of truth for agent overrides — controls how they are persisted and
    * surfaced in Studio.
@@ -459,6 +525,12 @@ export interface IMastraEditor {
    * before calling this namespace.
    */
   readonly favorites?: IEditorFavoritesNamespace;
+
+  /** Whether this editor was configured with an enabled Agent Builder. */
+  hasEnabledBuilderConfig?(): boolean;
+
+  /** Resolve the configured Agent Builder, or `undefined` when it is disabled. */
+  resolveBuilder?(): Promise<IAgentBuilder | undefined>;
 
   /** Registered tool providers */
   getToolProvider(id: string): ToolProvider | undefined;
