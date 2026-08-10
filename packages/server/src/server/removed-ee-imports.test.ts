@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,21 +18,17 @@ const skippedDirectories = new Set(['.git', '.next', '.turbo', 'coverage', 'dist
 
 function isExcluded(relativePath: string): boolean {
   const normalized = relativePath.split(path.sep).join('/');
-  return (
-    normalized === '.changeset' ||
-    normalized.startsWith('.changeset/') ||
-    /(?:^|\/)changelog(?:\.[^/]+)?$/i.test(normalized)
-  );
+  return normalized === '.changeset' || normalized.startsWith('.changeset/');
 }
 
-function findSourceFiles(directory: string): string[] {
+function findSourceFiles(directory: string, rootDirectory = repoRoot): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const filePath = path.join(directory, entry.name);
-    const relativePath = path.relative(repoRoot, filePath);
+    const relativePath = path.relative(rootDirectory, filePath);
 
     if (entry.isDirectory()) {
       if (skippedDirectories.has(entry.name) || isExcluded(relativePath)) return [];
-      return findSourceFiles(filePath);
+      return findSourceFiles(filePath, rootDirectory);
     }
 
     if (!sourceExtensions.has(path.extname(entry.name)) || isExcluded(relativePath)) return [];
@@ -132,5 +129,32 @@ describe('removed package subpaths', () => {
       { importKind: 'import', specifier },
       { importKind: 'dynamic import', specifier },
     ]);
+  });
+  it('detects imports in active changelog sources while excluding changeset markdown', () => {
+    const { specifier, source } = importFixtures[0];
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'removed-ee-imports-'));
+    const changelogPath = path.join(fixtureRoot, 'src', 'changelog.ts');
+    const changesetPath = path.join(fixtureRoot, '.changeset', 'fixture.md');
+
+    try {
+      fs.mkdirSync(path.dirname(changelogPath), { recursive: true });
+      fs.mkdirSync(path.dirname(changesetPath), { recursive: true });
+      fs.writeFileSync(changelogPath, source);
+      fs.writeFileSync(changesetPath, source);
+
+      const sourceFiles = findSourceFiles(fixtureRoot, fixtureRoot);
+      expect(sourceFiles).toEqual([changelogPath]);
+      expect(
+        sourceFiles.flatMap(findActiveImports).map(({ importKind, specifier: foundSpecifier }) => ({
+          importKind,
+          specifier: foundSpecifier,
+        })),
+      ).toEqual([
+        { importKind: 'import', specifier },
+        { importKind: 'dynamic import', specifier },
+      ]);
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 });
