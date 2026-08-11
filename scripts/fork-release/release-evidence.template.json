@@ -1,22 +1,49 @@
 {
   "$schema": "./schemas/release-evidence.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": 3,
+  "evidenceClass": "release",
+  "reviewedBaselineCommit": "UNRESOLVED",
+  "releaseCommit": "UNRESOLVED",
   "upstreamCommit": "UNRESOLVED",
   "requiredFacts": {
     "commercialPackageNames": {
       "status": "unresolved",
-      "value": [],
-      "basis": "UNRESOLVED: authoritative package ownership and license review required"
+      "decision": "UNRESOLVED",
+      "values": [],
+      "review": {
+        "reviewer": "UNRESOLVED",
+        "organization": "UNRESOLVED",
+        "reviewedAt": "UNRESOLVED",
+        "reference": "UNRESOLVED",
+        "path": "UNRESOLVED",
+        "sha256": "UNRESOLVED"
+      }
     },
     "commercialNetworkDestinations": {
       "status": "unresolved",
-      "value": [],
-      "basis": "UNRESOLVED: authoritative runtime destination review required"
+      "decision": "UNRESOLVED",
+      "values": [],
+      "review": {
+        "reviewer": "UNRESOLVED",
+        "organization": "UNRESOLVED",
+        "reviewedAt": "UNRESOLVED",
+        "reference": "UNRESOLVED",
+        "path": "UNRESOLVED",
+        "sha256": "UNRESOLVED"
+      }
     },
     "prohibitedLicenseExpressions": {
       "status": "unresolved",
-      "value": [],
-      "basis": "UNRESOLVED: counsel-approved license policy required"
+      "decision": "UNRESOLVED",
+      "values": [],
+      "review": {
+        "reviewer": "UNRESOLVED",
+        "organization": "UNRESOLVED",
+        "reviewedAt": "UNRESOLVED",
+        "reference": "UNRESOLVED",
+        "path": "UNRESOLVED",
+        "sha256": "UNRESOLVED"
+      }
     }
   },
   "artifact": {
@@ -27,35 +54,63 @@
   },
   "sbom": {
     "path": "UNRESOLVED",
-    "sha256": "UNRESOLVED"
+    "sha256": "UNRESOLVED",
+    "artifactSha256": "UNRESOLVED"
   },
   "provenance": {
     "path": "UNRESOLVED",
-    "sha256": "UNRESOLVED"
+    "sha256": "UNRESOLVED",
+    "artifactSha256": "UNRESOLVED",
+    "reviewedBaselineCommit": "UNRESOLVED",
+    "releaseCommit": "UNRESOLVED",
+    "version": "UNRESOLVED"
   },
   "licenseEvidence": {
     "path": "UNRESOLVED",
-    "sha256": "UNRESOLVED"
+    "sha256": "UNRESOLVED",
+    "artifactSha256": "UNRESOLVED",
+    "sbomSha256": "UNRESOLVED"
   },
   "networkEvidence": {
-    "capture": {
-      "path": "UNRESOLVED",
-      "sha256": "UNRESOLVED"
-    },
-    "allowlist": {
+    "artifactSha256": "UNRESOLVED",
+    "capture": { "path": "UNRESOLVED", "sha256": "UNRESOLVED" },
+    "allowlist": { "path": "UNRESOLVED", "sha256": "UNRESOLVED" },
+    "reviewedAllowlistSource": { "path": "UNRESOLVED", "sha256": "UNRESOLVED" },
+    "review": {
+      "status": "unresolved",
+      "command": "network-review",
+      "captureSha256": "UNRESOLVED",
+      "allowlistSha256": "UNRESOLVED"
+    }
+  },
+  "compatibilityEvidence": {
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED",
+    "artifactSha256": "UNRESOLVED"
+  },
+  "rollback": {
+    "path": "UNRESOLVED",
+    "sha256": "UNRESOLVED",
+    "artifactSha256": "UNRESOLVED",
+    "commit": "UNRESOLVED"
+  },
+  "signing": {
+    "status": "unresolved",
+    "artifactSha256": "UNRESOLVED",
+    "reference": "UNRESOLVED",
+    "evidence": { "path": "UNRESOLVED", "sha256": "UNRESOLVED" }
+  },
+  "publicationAuthorization": {
+    "status": "unresolved",
+    "artifactSha256": "UNRESOLVED",
+    "reference": "UNRESOLVED",
+    "review": {
+      "reviewer": "UNRESOLVED",
+      "organization": "UNRESOLVED",
+      "reviewedAt": "UNRESOLVED",
+      "reference": "UNRESOLVED",
       "path": "UNRESOLVED",
       "sha256": "UNRESOLVED"
     }
-  },
-  "rollbackReference": "UNRESOLVED",
-  "signing": {
-    "status": "unresolved",
-    "reference": "UNRESOLVED",
-    "rationale": ""
-  },
-  "publication": {
-    "status": "unresolved",
-    "reference": "UNRESOLVED",
-    "rationale": ""
   }
 }

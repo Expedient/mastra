@@ -1,0 +1,105 @@
+{
+  "$schema": "./schemas/native-compatibility.schema.json",
+  "schemaVersion": 2,
+  "installationMode": "clean-room-installed-tarballs",
+  "areas": [
+    {
+      "id": "studio",
+      "description": "Installed Studio CLI startup",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "studio"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "playground",
+      "description": "Installed Playground UI export loading",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "playground"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "clean-room-agent-builder",
+      "description": "Installed open-source Agent Builder and editor exports",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "clean-room-agent-builder"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "agents-tools",
+      "description": "Installed agent and tool exports",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "agents-tools"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "workflows-recovery",
+      "description": "Installed workflow recovery exports",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "workflows-recovery"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "schedules",
+      "description": "Installed scheduling exports",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "schedules"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "ag-ui",
+      "description": "Installed AG-UI message-list exports",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "ag-ui"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "skills",
+      "description": "Installed Agent Skills surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "skills"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "workspaces",
+      "description": "Installed workspace surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "workspaces"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "memory",
+      "description": "Installed memory adapter surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "memory"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "settings-upgrade",
+      "description": "Installed runtime settings compatibility surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "settings-upgrade"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "evaluations",
+      "description": "Installed evaluation scorer surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "evaluations"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "postgres",
+      "description": "Installed PostgreSQL adapter surface",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "postgres"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "public-oss-apis",
+      "description": "Installed public authorization and server APIs",
+      "fixturePaths": ["scripts/fork-release/clean-room-agent-builder.mjs"],
+      "argv": ["node", "scripts/fork-release/clean-room-agent-builder.mjs", "--area", "public-oss-apis"],
+      "timeoutMs": 300000
+    }
+  ]
+}

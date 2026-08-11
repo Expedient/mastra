@@ -1,6 +1,6 @@
 {
   "$schema": "./schemas/policy.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "prohibitedModuleSpecifiers": [
     "@internal/auth/ee",
     "@mastra/core/agent-builder/ee",
@@ -22,8 +22,21 @@
     "@mastra/core/agent-builder/ee",
     "@mastra/core/auth/ee",
     "@mastra/editor/ee",
-    "@mastra/playground-ui/ee"
+    "@mastra/playground-ui/ee",
+    "Mastra Enterprise Edition (EE) License",
+    "MASTRA_EE_LICENSE",
+    "MASTRA_LICENSE_KEY",
+    "MASTRA_LICENSE_URL",
+    "license.mastra.ai",
+    "mastra.eeTelemetryBridge"
   ],
-  "deniedLicenseExpressions": [],
-  "scanExcludedPrefixes": [".changeset"]
+  "deniedLicenseExpressions": [
+    "Mastra Enterprise Edition (EE) License",
+    "LicenseRef-Mastra-Enterprise",
+    "LicenseRef-Commercial",
+    "commercial",
+    "enterprise edition",
+    "proprietary"
+  ],
+  "scanExcludedPrefixes": []
 }

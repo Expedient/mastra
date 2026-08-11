@@ -1,0 +1,128 @@
+name: Publish gated Expedient Mastra bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_commit:
+        description: Exact clean release commit to package
+        required: true
+        type: string
+      reviewed_baseline_commit:
+        description: Exact reviewed baseline commit
+        required: true
+        default: b23d4277e12e30816e154401d9d1e012d5d383e1
+        type: string
+      upstream_base:
+        description: Exact rollback/base commit
+        required: true
+        type: string
+      artifact_name:
+        description: Exact Expedient npm bundle name
+        required: true
+        default: '@expedient/mastra-native'
+        type: string
+      artifact_version:
+        description: Exact immutable npm bundle version
+        required: true
+        default: 0.1.0-expedient.1
+        type: string
+      evidence_seed:
+        description: Canonical production evidence seed path
+        required: true
+        type: string
+      reviewed_network_allowlist:
+        description: Canonical reviewed network allowlist source
+        required: true
+        type: string
+      network_exercises:
+        description: Canonical real runtime exercise manifest
+        required: true
+        type: string
+      npm_tag:
+        description: Approved npm distribution tag
+        required: true
+        default: expedient
+        type: string
+      confirmation:
+        description: Enter PUBLISH-GATED-EXPEDIENT-FORK
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-npm-publication
+  cancel-in-progress: false
+
+jobs:
+  release-gates:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/fork-release-gates.yml
+    with:
+      release_commit: ${{ inputs.release_commit }}
+      reviewed_baseline_commit: ${{ inputs.reviewed_baseline_commit }}
+      upstream_base: ${{ inputs.upstream_base }}
+      artifact_name: ${{ inputs.artifact_name }}
+      artifact_version: ${{ inputs.artifact_version }}
+      evidence_seed: ${{ inputs.evidence_seed }}
+      reviewed_network_allowlist: ${{ inputs.reviewed_network_allowlist }}
+      network_exercises: ${{ inputs.network_exercises }}
+
+  publish:
+    if: >-
+      inputs.confirmation == 'PUBLISH-GATED-EXPEDIENT-FORK' &&
+      vars.FORK_PUBLICATION_APPROVED == 'true' &&
+      github.repository == vars.EXPEDIENT_FORK_REPOSITORY
+    needs: release-gates
+    runs-on: ubuntu-latest
+    environment: fork-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download exact bundle that passed every release gate
+        uses: actions/download-artifact@3e5f45c2bf9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.release-gates.outputs.artifact_name }}
+          path: release
+      - name: Setup Node.js 22.23.1 for npm trusted publishing
+        uses: actions/setup-node@04be95cf3511ea51ebf9f224ddfb99cc7ab87cd4
+        with:
+          node-version: 22.23.1
+          registry-url: https://registry.npmjs.org
+      - name: Pin trusted-publishing capable npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.5.1
+          test "$(npm --version)" = "11.5.1"
+      - name: Verify exact digest, package identity, and publication tag
+        env:
+          EXPECTED_NAME: ${{ inputs.artifact_name }}
+          EXPECTED_SHA256: ${{ needs.release-gates.outputs.artifact_sha256 }}
+          EXPECTED_VERSION: ${{ inputs.artifact_version }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release/fork-npm-artifacts.tgz
+          test "$(sha256sum release/fork-npm-artifacts.tgz | cut -d' ' -f1)" = "$EXPECTED_SHA256"
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          const packageJson = JSON.parse(execFileSync('tar', ['-xOzf', 'release/fork-npm-artifacts.tgz', 'package/package.json'], { encoding: 'utf8' }));
+          if (packageJson.name !== process.env.EXPECTED_NAME || packageJson.version !== process.env.EXPECTED_VERSION) {
+            throw new Error(`bundle identity mismatch: ${packageJson.name}@${packageJson.version}`);
+          }
+          if (packageJson.name !== '@expedient/mastra-native') throw new Error('refusing to publish an unexpected package identity');
+          NODE
+          [[ "$NPM_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+      - name: Publish only the gated Expedient bundle with npm provenance
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          NPM_TAG: ${{ inputs.npm_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm publish release/fork-npm-artifacts.tgz --access public --tag "$NPM_TAG" --provenance

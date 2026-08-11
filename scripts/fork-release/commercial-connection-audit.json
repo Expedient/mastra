@@ -1,209 +1,699 @@
 {
   "$schema": "./schemas/commercial-connection-audit.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "auditedBase": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
   "approvedMigrationTip": "b23d4277e12e30816e154401d9d1e012d5d383e1",
+  "inventory": {
+    "query": "All audited-base EE directories plus active references to @internal/auth/ee, @mastra/core/auth/ee, @mastra/core/agent-builder/ee, @mastra/editor/ee, and @mastra/playground-ui/ee; grouped by the seventeen migration seams below",
+    "moduleSpecifiers": [
+      "@internal/auth/ee",
+      "@mastra/core/agent-builder/ee",
+      "@mastra/core/auth/ee",
+      "@mastra/editor/ee",
+      "@mastra/playground-ui/ee"
+    ],
+    "sourcePathPrefixes": [
+      "ee/LICENSE",
+      "packages/_internals/auth/src/ee",
+      "packages/core/src/agent-builder/ee",
+      "packages/core/src/auth/ee",
+      "packages/editor/src/ee",
+      "packages/playground/src/ee",
+      "packages/playground-ui/src/ee"
+    ],
+    "discoveredPathCount": 211,
+    "discoveredPathsSha256": "2bdb81ab29065501bb7a6df1101c0878856a487660c47cd87e2a3841d78d7ae6",
+    "sha256": "97ebeb7d35a1aca29bd4e7b4ee99806b5f1198fda14ee98517594d4cacb998bf",
+    "paths": [
+      { "connectionPointId": "CP-17", "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/auth0/src/index.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/better-auth/src/index.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/clerk/src/index.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/cloud/src/auth-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/cloud/src/rbac/rbac-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/google/src/rbac-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/neon/src/rbac-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/okta/src/rbac-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/studio/src/index.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/workos/src/auth-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/workos/src/fga-provider.ts" },
+      { "connectionPointId": "CP-11", "path": "auth/workos/src/rbac-provider.ts" },
+      { "connectionPointId": "CP-17", "path": "examples/agent-builder/src/mastra/index.ts" },
+      { "connectionPointId": "CP-17", "path": "templates/template-agent-builder/src/mastra/index.ts" },
+      { "connectionPointId": "CP-10", "path": "ee/LICENSE" },
+      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/package.json" },
+      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/src/ee/license.ts" },
+      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/src/ee/telemetry.ts" },
+      { "connectionPointId": "CP-01", "path": "packages/playground-ui/package.json" },
+      { "connectionPointId": "CP-02", "path": "packages/playground-ui/vite.config.ts" },
+      { "connectionPointId": "CP-03", "path": "packages/playground/src/App.tsx" },
+      { "connectionPointId": "CP-04", "path": "packages/core/package.json" },
+      { "connectionPointId": "CP-05", "path": "packages/core/tsdown.config.ts" },
+      { "connectionPointId": "CP-06", "path": "packages/core/src/editor/types.ts" },
+      { "connectionPointId": "CP-07", "path": "packages/editor/package.json" },
+      { "connectionPointId": "CP-08", "path": "packages/editor/tsdown.config.ts" },
+      { "connectionPointId": "CP-09", "path": "packages/editor/src/index.ts" },
+      { "connectionPointId": "CP-12", "path": "packages/core/src/auth/ee/index.ts" },
+      { "connectionPointId": "CP-13", "path": "packages/core/tsdown.config.ts" },
+      { "connectionPointId": "CP-14", "path": "packages/core/src/workflows/workflow.ts" },
+      { "connectionPointId": "CP-14", "path": "packages/mcp/src/server/server.ts" },
+      { "connectionPointId": "CP-14", "path": "workflows/inngest/src/execution-engine.ts" },
+      { "connectionPointId": "CP-15", "path": "packages/server/src/server/auth/helpers.ts" },
+      { "connectionPointId": "CP-15", "path": "server-adapters/express/src/index.ts" },
+      { "connectionPointId": "CP-15", "path": "server-adapters/fastify/src/index.ts" },
+      { "connectionPointId": "CP-15", "path": "server-adapters/hono/src/index.ts" },
+      { "connectionPointId": "CP-15", "path": "server-adapters/koa/src/index.ts" },
+      { "connectionPointId": "CP-16", "path": "packages/server/src/server/handlers/editor-builder.ts" },
+      { "connectionPointId": "CP-16", "path": "packages/server/src/server/server-adapter/index.ts" }
+    ]
+  },
   "connectionPoints": [
     {
       "id": "CP-01",
-      "connectionType": "package-export",
+      "connectionType": "playground-ui wildcard package export",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground-ui/package.json" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/playground-ui/package.json",
+          "symbol": "exports ./ee/*",
+          "objectId": "7ba9a9e1200c620974445938bd609f695fc67ffa",
+          "snippet": "\"./ee/*\": {",
+          "snippetSha256": "4492701348733fb9adb003ae02185f3acd4f5e5045c7e72a1b840302393f6f2a"
+        }
       ],
       "disposition": "remove",
-      "replacementPaths": ["packages/playground-ui/package.json"],
-      "replacementRegressionCheck": "dependency graph rejects restoration of @mastra/playground-ui/ee exports",
+      "replacementFingerprints": [
+        {
+          "path": "packages/playground-ui/package.json",
+          "sha256": "14b96f225742a36823246f1eb2255959de257c8937a020aa7a9ba6e4539d88a4"
+        }
+      ],
+      "replacementRegressionCheck": "descendant and wildcard export scans reject restoration of @mastra/playground-ui/ee",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-01",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-02",
-      "connectionType": "build-entry",
+      "connectionType": "playground-ui generated EE build entries",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground-ui/vite.config.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/playground-ui/vite.config.ts",
+          "symbol": "eeEntries",
+          "objectId": "32d8839183a41b083b415dbeb991e83024141980",
+          "snippet": "const eeEntries = createPublicFileEntries(resolve(__dirname, 'src/ee'), 'ee');",
+          "snippetSha256": "c452f26ddb2c5001edb6e445c9c661f041dee4576364473fe31060d314101ec1"
+        }
       ],
       "disposition": "remove",
-      "replacementPaths": ["packages/playground-ui/vite.config.ts"],
-      "replacementRegressionCheck": "built bundle and prohibited source-path scans reject EE UI entries",
+      "replacementFingerprints": [
+        {
+          "path": "packages/playground-ui/vite.config.ts",
+          "sha256": "c97e7a592fc7f182bbb8eb87da5e0aec081c1e26d3bc4a4f7f15aa492e920418"
+        }
+      ],
+      "replacementRegressionCheck": "generated path and final-byte scans reject EE UI entries",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-02",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-03",
-      "connectionType": "application-route",
+      "connectionType": "playground Signals routes, navigation, and runtime API",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/playground/src/App.tsx" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/playground/src/App.tsx",
+          "symbol": "SignalsOverviewPage",
+          "objectId": "db704df9b2c2c02b0e7b14258f3e455313ee9d69",
+          "snippet": "import SignalsOverviewPage from './ee/signals';",
+          "snippetSha256": "807e6ddb9322bf90605cc6418fae10a493281e66c08d54e4f9b6bd0c0a2e8df6"
+        }
       ],
       "disposition": "remove",
-      "replacementPaths": ["packages/playground/src/App.tsx", "packages/playground/src/lib/nav/nav-items.tsx"],
-      "replacementRegressionCheck": "active source and source-path scans reject retired Signals UI wiring",
+      "replacementFingerprints": [
+        {
+          "path": "packages/playground/src/App.tsx",
+          "sha256": "81f73d57fe7357faaea53f491c1c8da309a2d68c74452746dd4e29048150dfd2"
+        },
+        {
+          "path": "packages/playground/src/lib/nav/nav-items.tsx",
+          "sha256": "7c4a0e771b004d7f03a1cc567a9059ebcfbc05474fb907eb06c7447f2bae108c"
+        }
+      ],
+      "replacementRegressionCheck": "active import, alias, source-path, and Playground fixture scans reject retired Signals wiring",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-03",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-04",
-      "connectionType": "package-export",
+      "connectionType": "core Agent Builder EE package export",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/package.json" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/package.json",
+          "symbol": "exports ./agent-builder/ee",
+          "objectId": "3530653b3fb2339ade859bd8b98ed3c3d19a835c",
+          "snippet": "\"./agent-builder/ee\": {",
+          "snippetSha256": "b73909a101547f96a35749da7139b159e07841c8ec8560b5fe6f67dcafd65be7"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/package.json", "packages/core/src/editor/index.ts"],
-      "replacementRegressionCheck": "dependency graph rejects @mastra/core/agent-builder/ee while public editor types remain exported",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/package.json",
+          "sha256": "4a74cf45020fde58e40063c3699764a239fd075b315440ae87d71f3bd1dd111a"
+        },
+        {
+          "path": "packages/core/src/editor/index.ts",
+          "sha256": "63c3ca8258c79e185fb8b2fabfa5d8d44ab3755fb83997a8815b539c7484b479"
+        }
+      ],
+      "replacementRegressionCheck": "graph rejects the EE root and descendants while public Editor types remain exported",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-04",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-05",
-      "connectionType": "build-entry",
+      "connectionType": "core Agent Builder EE tsdown entry",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/tsdown.config.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/tsdown.config.ts",
+          "symbol": "src/agent-builder/ee/index.ts",
+          "objectId": "e6a4f534a679bac5e155944c6d043330501cd05a",
+          "snippet": "'src/agent-builder/ee/index.ts',",
+          "snippetSha256": "b20506028ec3d375077bd30e4410cff78186594c7fd78f33e74f80fdbb2bee90"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/tsdown.config.ts", "packages/core/src/editor/types.ts"],
-      "replacementRegressionCheck": "bundle scan rejects the retired builder subpath and editor type tests preserve the native interface",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/tsdown.config.ts",
+          "sha256": "a9796522b99f77610dfd990d81dbc8f31043179d209c7e8d1d0524f1af2a8df7"
+        },
+        {
+          "path": "packages/core/src/editor/types.ts",
+          "sha256": "226462d74715e46f2934e8ccc0c4b22a847bb1cd80245f5a1fe6804785799a70"
+        }
+      ],
+      "replacementRegressionCheck": "build-entry path and packed bundle scans reject retired Agent Builder code",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-05",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-06",
-      "connectionType": "type-import",
+      "connectionType": "core Editor type bridge to Agent Builder EE",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/editor/types.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/src/editor/types.ts",
+          "symbol": "AgentBuilderOptions and IAgentBuilder import",
+          "objectId": "c4cf07f826c2ea0daed82160802f22c9823733f8",
+          "snippet": "import type { AgentBuilderOptions, IAgentBuilder } from '../agent-builder/ee';",
+          "snippetSha256": "20d446836b5ea20b7f01019f8329ede4707ee22c34f651c0d7c793d99f5c7d0a"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/src/editor/types.ts", "packages/editor/src/agent-builder.test.ts"],
-      "replacementRegressionCheck": "active import scan rejects the EE type bridge and Agent Builder tests cover the OSS contract",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/src/editor/types.ts",
+          "sha256": "226462d74715e46f2934e8ccc0c4b22a847bb1cd80245f5a1fe6804785799a70"
+        },
+        {
+          "path": "packages/editor/src/agent-builder.test.ts",
+          "sha256": "8abb83fa02db643bbf4f3b1653d210521f5ac348a144b35df680e09dab4edb94"
+        }
+      ],
+      "replacementRegressionCheck": "active import scan and native Agent Builder contract tests cover the public type replacement",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-06",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-07",
-      "connectionType": "package-export",
+      "connectionType": "Editor EE package export",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/package.json" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/editor/package.json",
+          "symbol": "exports ./ee",
+          "objectId": "7e5b7ddeeddb6af7a97f73ed4fe9e93e308b9cc4",
+          "snippet": "\"./ee\": {",
+          "snippetSha256": "4df45baca773f3fe3ffa92c98e122456a486696dff3d7217892ab2827005e04d"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/editor/package.json", "packages/editor/src/index.ts"],
-      "replacementRegressionCheck": "dependency graph rejects @mastra/editor/ee and the root editor export provides native Builder APIs",
+      "replacementFingerprints": [
+        {
+          "path": "packages/editor/package.json",
+          "sha256": "cf5cb1ff6ab50a038ab946fbc1809b38b26a1fc4ec4d5c2ab37c91780e384e5d"
+        },
+        {
+          "path": "packages/editor/src/index.ts",
+          "sha256": "ab9bfb181799e925c1183958ecf1c6cb329349ab3612999dbb86fcae7d8af768"
+        }
+      ],
+      "replacementRegressionCheck": "graph rejects Editor EE roots and root Editor exports native Builder APIs",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-07",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-08",
-      "connectionType": "build-entry-and-assets",
+      "connectionType": "Editor EE build entry and embedded skills",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/tsdown.config.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/editor/tsdown.config.ts",
+          "symbol": "src/ee/index.ts entry",
+          "objectId": "d13e133c1dd46bbc92a2e258fd3ac03942cf28b0",
+          "snippet": "entry: ['src/index.ts', 'src/composio.ts', 'src/arcade.ts', 'src/storage/index.ts', 'src/ee/index.ts'],",
+          "snippetSha256": "fb09d4305195a7e71b2e5a1f00850d9cd287c0e9e283945e3837bd141d945565"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/editor/tsdown.config.ts", "packages/editor/src/agent-builder.ts"],
-      "replacementRegressionCheck": "built artifact scan rejects retired EE entries while the native Builder implementation is bundled",
+      "replacementFingerprints": [
+        {
+          "path": "packages/editor/tsdown.config.ts",
+          "sha256": "7234dd5687a884c029fab14ec9001025955e5fdd32079988575abf631ea9e9df"
+        },
+        {
+          "path": "packages/editor/src/agent-builder.ts",
+          "sha256": "f934a15af38af0ba8ce83e242bcb2c9304baa636d13c70468494ab4d082b9686"
+        }
+      ],
+      "replacementRegressionCheck": "generated paths, archives, and bytes reject retired EE assets while native Builder is packed",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-08",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-09",
-      "connectionType": "runtime-loader",
+      "connectionType": "Editor runtime Agent Builder EE loader",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/editor/src/index.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/editor/src/index.ts",
+          "symbol": "Agent Builder EE type import and dynamic loader",
+          "objectId": "0e0de7002e948160be168d67f1c7df8f5996f828",
+          "snippet": "import type { AgentBuilderOptions, IAgentBuilder } from '@mastra/core/agent-builder/ee';",
+          "snippetSha256": "1eb884428da023691f65cab0418ad3d5afc433a436e13eaa12dddbe6140925c2"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/editor/src/index.ts", "packages/editor/src/agent-builder.test.ts"],
-      "replacementRegressionCheck": "native resolveBuilder tests replace the former dynamic commercial loader",
+      "replacementFingerprints": [
+        {
+          "path": "packages/editor/src/index.ts",
+          "sha256": "ab9bfb181799e925c1183958ecf1c6cb329349ab3612999dbb86fcae7d8af768"
+        },
+        {
+          "path": "packages/editor/src/agent-builder.test.ts",
+          "sha256": "8abb83fa02db643bbf4f3b1653d210521f5ac348a144b35df680e09dab4edb94"
+        }
+      ],
+      "replacementRegressionCheck": "native resolveBuilder tests replace the commercial dynamic loader",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-09",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-10",
-      "connectionType": "internal-package-export",
+      "connectionType": "internal auth EE export, commercial license validation network, and EE telemetry bridge",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/_internals/auth/package.json" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/_internals/auth/package.json",
+          "symbol": "exports ./ee",
+          "objectId": "bcfeda9df999bec7167e2fd821dce6e87d199685",
+          "snippet": "\"./ee\": {",
+          "snippetSha256": "4df45baca773f3fe3ffa92c98e122456a486696dff3d7217892ab2827005e04d"
+        },
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "ee/LICENSE",
+          "symbol": "Mastra Enterprise Edition license boundary",
+          "objectId": "a33ab28957b21f5320ad7683848c8ae7636d7bdc",
+          "snippet": "Mastra Enterprise Edition (EE) License",
+          "snippetSha256": "5ee2a642594e175da5a1f4fa4579683af8f961b7cbfbc42ae8d8847c7efb9803"
+        },
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/_internals/auth/src/ee/license.ts",
+          "symbol": "LicenseClient license server destination",
+          "objectId": "3dfbf6bea944701aa0c027d2638e96364f937698",
+          "snippet": "this.licenseUrl = process.env.MASTRA_LICENSE_URL || 'https://license.mastra.ai';",
+          "snippetSha256": "0d710c1635c84ae1b7bf4b905fd42af64c6ae5c1bfae22cfc16b98b3916941a7"
+        },
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/_internals/auth/src/ee/telemetry.ts",
+          "symbol": "EE_TELEMETRY_BRIDGE",
+          "objectId": "6d5685f553428cf08f4013b9bd4ea6bd387b896b",
+          "snippet": "const EE_TELEMETRY_BRIDGE = Symbol.for('mastra.eeTelemetryBridge');",
+          "snippetSha256": "641c271df21133ee2d42c2e0165ba92d019e0361bb936a7419535eb166c9a04b"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/_internals/auth/package.json", "packages/_internals/auth/src/authorization.ts"],
-      "replacementRegressionCheck": "dependency graph rejects @internal/auth/ee and exposes authorization as an OSS subpath",
+      "replacementFingerprints": [
+        {
+          "path": "packages/_internals/auth/package.json",
+          "sha256": "4437b8f940289744f93a3a948dae6320bde60854ac90da92fe0db91012aa3cb5"
+        },
+        {
+          "path": "packages/_internals/auth/src/authorization.ts",
+          "sha256": "1d7e7481365b0e87d945842dfbfebda7fd49b9072ae9bb25157460963f12798a"
+        }
+      ],
+      "replacementRegressionCheck": "source, bundle, license, and OS-level network gates reject the source-established EE boundary and behaviors",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-10",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-11",
-      "connectionType": "provider-imports",
+      "connectionType": "all grouped auth-provider imports of internal EE RBAC/FGA interfaces",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "auth/workos/src/rbac-provider.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "auth/workos/src/rbac-provider.ts",
+          "symbol": "IRBACProvider and RoleMapping",
+          "objectId": "2b721b7b4ab128a38f7828fa2c28c5446e367909",
+          "snippet": "import type { IRBACProvider, RoleMapping } from '@internal/auth/ee';",
+          "snippetSha256": "e504b5e9154588e681948781230568a66308bfb4e93862fc437cfd5c3d6bec37"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["auth/workos/src/rbac-provider.ts", "auth/workos/src/rbac-provider.test.ts"],
-      "replacementRegressionCheck": "active import scan plus WorkOS wildcard RBAC regression tests cover provider migration",
+      "replacementFingerprints": [
+        {
+          "path": "auth/workos/src/rbac-provider.ts",
+          "sha256": "cbc62828161b16eb770879ba3304def3d3cdf6b0e1aa169a2df83cbdb52e411d"
+        },
+        {
+          "path": "auth/workos/src/rbac-provider.test.ts",
+          "sha256": "8a48f4caf6c7b8af88260bb8693e03ff669097e10ee913d17f59dc0fbfb37dd8"
+        }
+      ],
+      "replacementRegressionCheck": "inventory covers every provider importer and active scans plus WorkOS tests enforce OSS authorization",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-11",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-12",
-      "connectionType": "package-export",
+      "connectionType": "core auth EE package export",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/package.json" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/package.json",
+          "symbol": "exports ./auth/ee",
+          "objectId": "3530653b3fb2339ade859bd8b98ed3c3d19a835c",
+          "snippet": "\"./auth/ee\": {",
+          "snippetSha256": "fa3f94b065ad2bf010a7bdb30dcdadb9d9a78ade7544316611004e3d745bb4d9"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/package.json", "packages/core/src/auth/authorization.ts"],
-      "replacementRegressionCheck": "dependency graph rejects @mastra/core/auth/ee and exposes auth/authorization",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/package.json",
+          "sha256": "4a74cf45020fde58e40063c3699764a239fd075b315440ae87d71f3bd1dd111a"
+        },
+        {
+          "path": "packages/core/src/auth/authorization.ts",
+          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+        }
+      ],
+      "replacementRegressionCheck": "graph rejects auth/ee descendants and exposes public auth/authorization",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-12",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-13",
-      "connectionType": "build-entry",
+      "connectionType": "core auth EE tsdown build entry",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/auth/ee/index.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/tsdown.config.ts",
+          "symbol": "src/auth/ee/index.ts entry",
+          "objectId": "e6a4f534a679bac5e155944c6d043330501cd05a",
+          "snippet": "'src/auth/ee/index.ts',",
+          "snippetSha256": "d720b2062adfed77424c38c33ec089261dc4bd32f4a18af2d43010526e5409dd"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/tsdown.config.ts", "packages/core/src/auth/authorization.ts"],
-      "replacementRegressionCheck": "bundle scan rejects auth/ee literals and authorization tests cover the OSS entry",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/tsdown.config.ts",
+          "sha256": "a9796522b99f77610dfd990d81dbc8f31043179d209c7e8d1d0524f1af2a8df7"
+        },
+        {
+          "path": "packages/core/src/auth/authorization.ts",
+          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+        }
+      ],
+      "replacementRegressionCheck": "actual tsdown entry fingerprint, generated path scan, and archive scan reject auth EE bundles",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-13",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-14",
-      "connectionType": "runtime-authorization-imports",
+      "connectionType": "core, MCP, and workflow-engine runtime authorization imports",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/core/src/workflows/workflow.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/core/src/workflows/workflow.ts",
+          "symbol": "MastraFGAPermissions",
+          "objectId": "9de8a32cb6bb101515b9c58ae7ba2cdbcde86741",
+          "snippet": "import { MastraFGAPermissions } from '../auth/ee';",
+          "snippetSha256": "b03ad50d6a017672f5859ef6e449f939bc942d08b9738b32b4ebbdbea005f6a9"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": ["packages/core/src/workflows/workflow.ts", "packages/core/src/auth/authorization.test.ts"],
-      "replacementRegressionCheck": "active import scan and core authorization tests protect workflow FGA behavior",
+      "replacementFingerprints": [
+        {
+          "path": "packages/core/src/workflows/workflow.ts",
+          "sha256": "e8ffe7b3a608c45f292adb0730fc0b5e10bde8582380a2e2109cac99448309e5"
+        },
+        {
+          "path": "packages/core/src/auth/authorization.test.ts",
+          "sha256": "adf787d410cfc0c9e5b5b74fd98bd5d67b2ab57757143a88b245eabc4315ad8e"
+        }
+      ],
+      "replacementRegressionCheck": "grouped runtime import inventory and authorization tests preserve native behavior",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-14",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-15",
-      "connectionType": "server-authorization-import",
+      "connectionType": "server and server-adapter authorization imports",
       "historySources": [
-        { "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb", "path": "packages/server/src/server/auth/helpers.ts" }
+        {
+          "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
+          "path": "packages/server/src/server/auth/helpers.ts",
+          "symbol": "IRBACProvider and EEUser",
+          "objectId": "2549f0357e0ad16b47c6b27e068e042dc5a08c91",
+          "snippet": "import type { IRBACProvider, EEUser } from '@mastra/core/auth/ee';",
+          "snippetSha256": "7f8e539325ad86a08789fc727d04bb6e5c62fbeaccae90f5336a224f7f212e50"
+        }
       ],
       "disposition": "replace",
-      "replacementPaths": [
-        "packages/server/src/server/auth/helpers.ts",
-        "packages/server/src/server/handlers/auth.test.ts"
+      "replacementFingerprints": [
+        {
+          "path": "packages/server/src/server/auth/helpers.ts",
+          "sha256": "7c23f9b968f563c0be7ee52a73f30876f70a1b3038ddd96c33d5b47a73d57cf6"
+        },
+        {
+          "path": "packages/server/src/server/handlers/auth.test.ts",
+          "sha256": "c69f535d38c118485a3ab1f972e69dee84921bdadb2f5431d745356680e7b2c0"
+        }
       ],
-      "replacementRegressionCheck": "active import scan and server auth handler tests preserve authorization behavior",
+      "replacementRegressionCheck": "grouped server import inventory and auth handler tests preserve public authorization",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-15",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-16",
-      "connectionType": "server-dynamic-import",
+      "connectionType": "server dynamic Agent Builder EE loading and license enforcement",
       "historySources": [
         {
           "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
-          "path": "packages/server/src/server/handlers/editor-builder.ts"
+          "path": "packages/server/src/server/handlers/editor-builder.ts",
+          "symbol": "builderToModelPolicy and resolvePickerVisibility dynamic import",
+          "objectId": "fdfcb2fabf56c3126fb720b16c14977a193a7457",
+          "snippet": "const { builderToModelPolicy, resolvePickerVisibility } = await import('@mastra/core/agent-builder/ee');",
+          "snippetSha256": "ef59ba77e64de983ae76d08a417ac3671620f93c12cdbed43412035a2ae68c67"
         }
       ],
       "disposition": "replace",
-      "replacementPaths": [
-        "packages/server/src/server/handlers/editor-builder.ts",
-        "packages/server/src/server/handlers/editor-builder.test.ts"
+      "replacementFingerprints": [
+        {
+          "path": "packages/server/src/server/handlers/editor-builder.ts",
+          "sha256": "bbe704d34bd46ab03ffecec4f357c9221ca767f56e3c54ea4173d62f0db35aec"
+        },
+        {
+          "path": "packages/server/src/server/handlers/editor-builder.test.ts",
+          "sha256": "ed9c06dea5095a3c1096a2d523f4f2bedf7f4903bf5b1117ab81517115daab97"
+        }
       ],
-      "replacementRegressionCheck": "removed-import guard and Builder handler tests reject dynamic EE loading while preserving policy behavior",
+      "replacementRegressionCheck": "dynamic descendant scans and Builder handler tests preserve policy without license loading",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-16",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     },
     {
       "id": "CP-17",
-      "connectionType": "consumer-import",
+      "connectionType": "all grouped Agent Builder template and example consumers",
       "historySources": [
         {
           "commit": "b6b1c53378a05b24aeb19ba0313203355fa82eeb",
-          "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts"
+          "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts",
+          "symbol": "createBuilderAgent import",
+          "objectId": "4a93dfeba73522e301786c6bf18d68fe1ce746e1",
+          "snippet": "import { createBuilderAgent } from '@mastra/editor/ee';",
+          "snippetSha256": "7f02380099e93ae59378e2544b22c4bd78d9933ba42dc07ecc0a265e6b170dc1"
         }
       ],
       "disposition": "replace",
-      "replacementPaths": [
-        ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts",
-        "packages/server/src/server/removed-ee-imports.test.ts"
+      "replacementFingerprints": [
+        {
+          "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts",
+          "sha256": "bbacbef4779b647dd2c9abd4e685523cce56fd3197093ac568483647e59b11fc"
+        },
+        {
+          "path": "packages/server/src/server/removed-ee-imports.test.ts",
+          "sha256": "eab85c191344f31d68899916721a46783aac4b9178339a532380a9e07609b370"
+        }
       ],
-      "replacementRegressionCheck": "repository-wide active source scan and removed-import fixtures reject stale consumer imports",
+      "replacementRegressionCheck": "inventory covers template/example consumers and clean-room packed-artifact execution enforces root public imports",
+      "regressionCommand": [
+        "node",
+        "scripts/fork-release/release-gate.mjs",
+        "regression",
+        "--id",
+        "CP-17",
+        "--root",
+        "."
+      ],
       "evidenceStatus": "verified"
     }
   ]

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/network-capture-line-v2.json",
+  "oneOf": [{ "$ref": "#/$defs/header" }, { "$ref": "#/$defs/network" }, { "$ref": "#/$defs/completion" }],
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+    },
+    "runtimeClasses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["node", "browser", "worker", "native", "subprocess"] }
+    },
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "schemaVersion",
+        "exerciseId",
+        "artifactSha256",
+        "startedAt",
+        "requiredRuntimeClasses",
+        "coverage"
+      ],
+      "properties": {
+        "type": { "const": "header" },
+        "schemaVersion": { "const": 2 },
+        "exerciseId": { "$ref": "#/$defs/nonempty" },
+        "artifactSha256": { "$ref": "#/$defs/digest" },
+        "startedAt": { "$ref": "#/$defs/timestamp" },
+        "requiredRuntimeClasses": { "$ref": "#/$defs/runtimeClasses" },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mechanism", "platform", "comprehensive", "descendants", "transports", "tool"],
+          "properties": {
+            "mechanism": { "enum": ["os-syscall", "container-pcap"] },
+            "platform": { "const": "linux" },
+            "comprehensive": { "const": true },
+            "descendants": { "const": true },
+            "transports": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["tcp", "udp", "subprocess", "native"] },
+              "allOf": [
+                { "contains": { "const": "tcp" } },
+                { "contains": { "const": "udp" } },
+                { "contains": { "const": "subprocess" } },
+                { "contains": { "const": "native" } }
+              ]
+            },
+            "tool": { "$ref": "#/$defs/nonempty" }
+          }
+        },
+        "zeroPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "basis", "proofPath", "proofSha256"],
+          "properties": {
+            "status": { "const": "proven-zero" },
+            "basis": { "$ref": "#/$defs/nonempty" },
+            "proofPath": { "$ref": "#/$defs/nonempty" },
+            "proofSha256": { "$ref": "#/$defs/digest" }
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "protocol", "host", "port", "source", "pid", "runtimeClass"],
+      "properties": {
+        "type": { "const": "network" },
+        "protocol": { "enum": ["tcp", "udp"] },
+        "host": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:]+)$"
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "source": { "enum": ["connect", "sendto", "sendmsg"] },
+        "pid": { "type": "integer", "minimum": 1 },
+        "runtimeClass": { "enum": ["node", "browser", "worker", "native", "subprocess"] }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "exerciseId",
+        "completedAt",
+        "status",
+        "exitCode",
+        "exercisedRuntimeClasses",
+        "outputSha256",
+        "outputTruncated"
+      ],
+      "properties": {
+        "type": { "const": "completion" },
+        "exerciseId": { "$ref": "#/$defs/nonempty" },
+        "completedAt": { "$ref": "#/$defs/timestamp" },
+        "status": { "const": "completed" },
+        "exitCode": { "const": 0 },
+        "exercisedRuntimeClasses": { "$ref": "#/$defs/runtimeClasses" },
+        "outputSha256": { "$ref": "#/$defs/digest" },
+        "outputTruncated": { "type": "boolean" }
+      }
+    }
+  }
+}

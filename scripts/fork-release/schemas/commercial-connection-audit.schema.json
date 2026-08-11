@@ -1,15 +1,60 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/schemas/commercial-connection-audit-v1.json",
+  "$id": "https://schemas.expedient.invalid/fork-release/commercial-audit-v2.json",
   "title": "Commercial connection audit",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "auditedBase", "approvedMigrationTip", "connectionPoints"],
+  "required": ["schemaVersion", "auditedBase", "approvedMigrationTip", "inventory", "connectionPoints"],
   "properties": {
     "$schema": { "type": "string" },
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "auditedBase": { "$ref": "#/$defs/commit" },
     "approvedMigrationTip": { "$ref": "#/$defs/commit" },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "query",
+        "moduleSpecifiers",
+        "sourcePathPrefixes",
+        "discoveredPathCount",
+        "discoveredPathsSha256",
+        "sha256",
+        "paths"
+      ],
+      "properties": {
+        "query": { "$ref": "#/$defs/nonempty" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "moduleSpecifiers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonempty" }
+        },
+        "sourcePathPrefixes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "discoveredPathCount": { "type": "integer", "minimum": 17 },
+        "discoveredPathsSha256": { "$ref": "#/$defs/digest" },
+        "paths": {
+          "type": "array",
+          "minItems": 17,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connectionPointId", "path"],
+            "properties": {
+              "connectionPointId": { "$ref": "#/$defs/id" },
+              "path": { "$ref": "#/$defs/path" }
+            }
+          }
+        }
+      }
+    },
     "connectionPoints": {
       "type": "array",
       "minItems": 17,
@@ -18,15 +63,35 @@
     }
   },
   "$defs": {
+    "id": { "type": "string", "pattern": "^CP-(0[1-9]|1[0-7])$" },
     "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-    "nonempty": { "type": "string", "minLength": 1 },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "objectId": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "nonempty": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//).+"
+    },
     "historySource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit", "path"],
+      "required": ["commit", "path", "symbol", "objectId", "snippet", "snippetSha256"],
       "properties": {
         "commit": { "$ref": "#/$defs/commit" },
-        "path": { "$ref": "#/$defs/nonempty" }
+        "path": { "$ref": "#/$defs/path" },
+        "symbol": { "$ref": "#/$defs/nonempty" },
+        "objectId": { "$ref": "#/$defs/objectId" },
+        "snippet": { "$ref": "#/$defs/nonempty" },
+        "snippetSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "replacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/digest" }
       }
     },
     "connectionPoint": {
@@ -37,17 +102,33 @@
         "connectionType",
         "historySources",
         "disposition",
-        "replacementPaths",
+        "replacementFingerprints",
         "replacementRegressionCheck",
+        "regressionCommand",
         "evidenceStatus"
       ],
       "properties": {
-        "id": { "type": "string", "pattern": "^CP-(0[1-9]|1[0-7])$" },
+        "id": { "$ref": "#/$defs/id" },
         "connectionType": { "$ref": "#/$defs/nonempty" },
         "historySources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/historySource" } },
         "disposition": { "enum": ["remove", "replace"] },
-        "replacementPaths": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonempty" } },
+        "replacementFingerprints": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/replacement" } },
         "replacementRegressionCheck": { "$ref": "#/$defs/nonempty" },
+        "regressionCommand": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "prefixItems": [
+            { "const": "node" },
+            { "const": "scripts/fork-release/release-gate.mjs" },
+            { "const": "regression" },
+            { "const": "--id" },
+            { "$ref": "#/$defs/id" },
+            { "const": "--root" },
+            { "const": "." }
+          ],
+          "items": false
+        },
         "evidenceStatus": { "const": "verified" }
       }
     }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/schemas/fork-release-policy-v1.json",
+  "$id": "https://schemas.expedient.invalid/fork-release/policy-v2.json",
   "title": "Fork release policy",
   "type": "object",
   "additionalProperties": false,
@@ -15,7 +15,7 @@
   ],
   "properties": {
     "$schema": { "type": "string" },
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "const": 2 },
     "prohibitedModuleSpecifiers": { "$ref": "#/$defs/uniqueStrings" },
     "prohibitedPackageNames": { "$ref": "#/$defs/uniqueStrings" },
     "prohibitedSourcePathSegments": { "$ref": "#/$defs/uniqueStrings" },
@@ -26,7 +26,7 @@
   "$defs": {
     "uniqueStrings": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
       "uniqueItems": true
     }
   }
