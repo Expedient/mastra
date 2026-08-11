@@ -91,7 +91,7 @@ jobs:
           pnpm fork-release:test
           pnpm fork-release:schemas
           pnpm fork-release:static
-          pnpm --filter @mastra/core exec vitest run src/license/index.test.ts
+          pnpm exec vitest --config scripts/fork-release/vitest.license.config.mjs run packages/core/src/license/index.test.ts
       - name: Build exact package graph
         run: |
           pnpm build
