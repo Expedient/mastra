@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MastraFGAPermissions } from '../auth/ee';
+import { MastraFGAPermissions } from '../auth';
 import { RequestContext } from '../request-context';
 import { InMemoryStore } from '../storage';
 

@@ -6,8 +6,8 @@ import type { StandardSchemaWithJSON } from '@mastra/schema-compat/schema';
 import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod/v4';
 import type { MastraPrimitives, MastraUnion } from '../action';
-import { MastraFGAPermissions } from '../auth/ee';
-import type { ActorSignal } from '../auth/ee';
+import { MastraFGAPermissions } from '../auth/authorization';
+import type { ActorSignal } from '../auth/authorization';
 import type { AgentBackgroundConfig, ToolBackgroundConfig } from '../background-tasks';
 import { MastraBase } from '../base';
 import type { MastraBrowser } from '../browser/browser';
@@ -6728,7 +6728,7 @@ export class Agent<
 
     const user = requestContext?.get('user');
     const executionResourceId = this.#getAgentExecutionResourceId({ requestContext, memory, snapshotMemoryInfo });
-    const { getAgentFGAResourceId, requireFGA } = await import('../auth/ee/fga-check');
+    const { getAgentFGAResourceId, requireFGA } = await import('../auth/authorization');
     await requireFGA({
       fgaProvider,
       user,

@@ -15,6 +15,8 @@ export interface User {
   name?: string;
   /** Avatar URL */
   avatarUrl?: string;
+  /** Additional provider-specific metadata */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -370,4 +372,4 @@ export interface IAuthHttpHandler {
 export * from './session';
 export * from './provider';
 export * from './types';
-export * from './ee';
+export * from './authorization';

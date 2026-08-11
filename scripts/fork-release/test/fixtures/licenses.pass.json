@@ -1,0 +1,7 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    { "name": "native-feature", "version": "1.0.0", "licenses": [{ "license": { "id": "Apache-2.0" } }] },
+    { "name": "dependency", "version": "2.0.0", "licenses": [{ "expression": "MIT OR Apache-2.0" }] }
+  ]
+}

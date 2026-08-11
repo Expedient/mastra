@@ -3,8 +3,8 @@
  * Maps tokens to users for simple API key authentication.
  */
 
-import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/ee';
-import type { EEUser } from '@mastra/core/auth/ee';
+import { StaticRBACProvider, DEFAULT_ROLES } from '@mastra/core/auth/authorization';
+import type { EEUser } from '@mastra/core/auth/authorization';
 import { SimpleAuth } from '@mastra/core/server';
 
 import type { AuthResult } from './types';

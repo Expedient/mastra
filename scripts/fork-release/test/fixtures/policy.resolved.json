@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "prohibitedModuleSpecifiers": ["@vendor/commercial/ee"],
+  "prohibitedPackageNames": ["@vendor/commercial"],
+  "prohibitedSourcePathSegments": ["src/ee"],
+  "prohibitedBundleTokens": ["@vendor/commercial/ee", "COMMERCIAL_SENTINEL"],
+  "deniedLicenseExpressions": ["LicenseRef-Commercial"],
+  "scanExcludedPrefixes": []
+}

@@ -13,7 +13,7 @@
  */
 
 import type { MastraAuthProvider } from '@mastra/core/server';
-import type { IRBACProvider } from '@mastra/core/auth/ee';
+import type { IRBACProvider } from '@mastra/core/auth/authorization';
 
 import type { AuthResult } from './types';
 

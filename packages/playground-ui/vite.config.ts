@@ -116,7 +116,6 @@ const createComponentEntries = (sourceDir: string, entryPrefix: string) => {
 const componentEntries = createComponentEntries(componentsDir, 'components');
 
 const domainEntries = createPublicFileEntries(resolve(__dirname, 'src/domains'), 'domains');
-const eeEntries = createPublicFileEntries(resolve(__dirname, 'src/ee'), 'ee');
 const primitiveEntries = createPublicFileEntries(resolve(__dirname, 'src/ds/primitives'), 'primitives');
 const resizeEntries = createPublicFileEntries(resolve(__dirname, 'src/lib/resize'), 'resize');
 const storeEntries = createPublicFileEntries(resolve(__dirname, 'src/store'), 'store');
@@ -179,7 +178,6 @@ const libConfig: UserConfig = {
         // Slashed keys make Rollup emit nested output: dist/components/<Name>.<format>.js
         ...utilityEntries,
         ...domainEntries,
-        ...eeEntries,
         ...primitiveEntries,
         ...resizeEntries,
         ...storeEntries,

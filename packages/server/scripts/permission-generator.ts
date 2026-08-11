@@ -11,17 +11,19 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SERVER_ROUTES } from '../src/server/server-adapter/routes/index.js';
-import { getEffectivePermission } from '../src/server/server-adapter/routes/permissions.js';
+import {
+  getEffectivePermission,
+  STORED_RESOURCE_PERMISSION_ALLOWLIST,
+} from '../src/server/server-adapter/routes/permissions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Path to the generated permissions file. The canonical file lives in
- * `@internal/auth` (re-exported by `@mastra/core/auth/ee`), so generation and
- * the staleness check must target that location.
+ * Path to the OSS canonical permission registry exposed by
+ * `@mastra/core/auth/authorization`.
  */
-export const OUTPUT_PATH = path.join(__dirname, '../../_internals/auth/src/ee/interfaces/permissions.generated.ts');
+export const OUTPUT_PATH = path.join(__dirname, '../../core/src/auth/permissions.generated.ts');
 
 /** Descriptions for actions (used for TSDoc comments in autocomplete) */
 const ACTION_DESCRIPTIONS: Record<string, string> = {
@@ -210,6 +212,14 @@ export type Resource = (typeof RESOURCES)[number];
  * - Additional actions from explicit requiresPermission overrides
  */
 export const ACTIONS = [${actions.map(a => `'${a}'`).join(', ')}] as const;
+
+/**
+ * Stored resource families covered by compound \`stored:*\` permissions.
+ * Unknown families are fail-closed.
+ */
+export const STORED_RESOURCE_PERMISSION_ALLOWLIST = [
+${STORED_RESOURCE_PERMISSION_ALLOWLIST.map(resource => `  '${resource}',`).join('\n')}
+] as const satisfies readonly Resource[];
 
 /**
  * Action type union.

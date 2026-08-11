@@ -6,11 +6,10 @@
  * the two-step `?favoritedOnly=true` pipeline + `authorId` transfer + archive.
  *
  * Phases 0–2 already unit-test storage primitives, namespace, route auth /
- * cascade / EE gate. This file only adds the scenarios that need every layer
+ * cascade / Builder gate. This file only adds the scenarios that need every layer
  * wired together.
  */
-import type { IAgentBuilder } from '@mastra/core/agent-builder/ee';
-import type { IMastraEditor } from '@mastra/core/editor';
+import type { IAgentBuilder, IMastraEditor } from '@mastra/core/editor';
 import { MASTRA_RESOURCE_ID_KEY, RequestContext } from '@mastra/core/request-context';
 import { InMemoryStore } from '@mastra/core/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

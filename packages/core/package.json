@@ -101,24 +101,14 @@
         "default": "./dist/auth/index.cjs"
       }
     },
-    "./auth/ee": {
+    "./auth/authorization": {
       "import": {
-        "types": "./dist/auth/ee/index.d.ts",
-        "default": "./dist/auth/ee/index.js"
+        "types": "./dist/auth/authorization.d.ts",
+        "default": "./dist/auth/authorization.js"
       },
       "require": {
-        "types": "./dist/auth/ee/index.d.ts",
-        "default": "./dist/auth/ee/index.cjs"
-      }
-    },
-    "./agent-builder/ee": {
-      "import": {
-        "types": "./dist/agent-builder/ee/index.d.ts",
-        "default": "./dist/agent-builder/ee/index.js"
-      },
-      "require": {
-        "types": "./dist/agent-builder/ee/index.d.ts",
-        "default": "./dist/agent-builder/ee/index.cjs"
+        "types": "./dist/auth/authorization.d.ts",
+        "default": "./dist/auth/authorization.cjs"
       }
     },
     "./background-tasks": {

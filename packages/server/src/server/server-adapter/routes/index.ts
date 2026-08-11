@@ -1,6 +1,6 @@
 import type { Mastra } from '@mastra/core';
 import type { ToolsInput } from '@mastra/core/agent';
-import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/ee';
+import type { FGARouteConfig, MastraFGAPermissionInput } from '@mastra/core/auth/authorization';
 import type { RequestContext } from '@mastra/core/request-context';
 import type { ApiRoute, ValidationErrorHook } from '@mastra/core/server';
 import type * as z from 'zod/v4';

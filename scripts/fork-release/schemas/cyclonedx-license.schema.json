@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/cyclonedx-license-v2.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["bomFormat", "specVersion", "serialNumber", "version", "metadata", "components", "dependencies"],
+  "properties": {
+    "bomFormat": { "const": "CycloneDX" },
+    "specVersion": { "type": "string", "pattern": "^1\\.(?:5|6|7)$" },
+    "serialNumber": { "type": "string", "pattern": "^urn:uuid:[0-9a-fA-F-]{36}$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "metadata": {
+      "type": "object",
+      "required": ["component", "properties"],
+      "properties": {
+        "component": { "$ref": "#/$defs/component" },
+        "properties": {
+          "type": "array",
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "properties": { "name": { "const": "expedient:artifact:sha256" } },
+                "required": ["name"]
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": { "name": { "const": "expedient:sbom:sha256" } },
+                "required": ["name"]
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "name": { "const": "expedient:inventory:complete" },
+                  "value": { "const": "true" }
+                },
+                "required": ["name", "value"]
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "name": { "const": "expedient:inventory:scope" },
+                  "value": { "const": "shipped-production-closure" }
+                },
+                "required": ["name", "value"]
+              }
+            }
+          ],
+          "items": { "$ref": "#/$defs/property" }
+        }
+      }
+    },
+    "components": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/component" } },
+    "dependencies": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/dependency" } }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": { "name": { "$ref": "#/$defs/nonempty" }, "value": { "$ref": "#/$defs/nonempty" } }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "bom-ref", "name", "version", "hashes", "licenses"],
+      "properties": {
+        "type": { "$ref": "#/$defs/nonempty" },
+        "bom-ref": { "$ref": "#/$defs/nonempty" },
+        "name": { "$ref": "#/$defs/nonempty" },
+        "version": { "$ref": "#/$defs/nonempty" },
+        "hashes": {
+          "type": "array",
+          "minItems": 1,
+          "contains": {
+            "type": "object",
+            "properties": { "alg": { "const": "SHA-256" }, "content": { "$ref": "#/$defs/digest" } },
+            "required": ["alg", "content"]
+          }
+        },
+        "licenses": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["expression"],
+                "properties": { "expression": { "$ref": "#/$defs/nonempty" } }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["license"],
+                "properties": {
+                  "license": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "oneOf": [
+                      { "required": ["id"], "properties": { "id": { "$ref": "#/$defs/nonempty" } } },
+                      { "required": ["name"], "properties": { "name": { "$ref": "#/$defs/nonempty" } } }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "dependsOn"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/nonempty" },
+        "dependsOn": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+      }
+    }
+  }
+}

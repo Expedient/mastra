@@ -28,7 +28,7 @@ export const listStoredSkillsQuerySchema = createPagePaginationSchema(100).exten
   favoritedOnly: z
     .stringbool()
     .optional()
-    .describe('When true, return only skills favorited by the caller (requires the `favorites` EE feature)'),
+    .describe('When true, return only skills favorited by the caller (requires the Builder `favorites` feature)'),
   pinFavoritedFor: z
     .string()
     .optional()

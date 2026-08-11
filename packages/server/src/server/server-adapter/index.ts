@@ -1,7 +1,12 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ToolsInput } from '@mastra/core/agent';
-import type { FGARouteConfig, FGARouteInfo, IFGAProvider, MastraFGAPermissionInput } from '@mastra/core/auth/ee';
+import type {
+  FGARouteConfig,
+  FGARouteInfo,
+  IFGAProvider,
+  MastraFGAPermissionInput,
+} from '@mastra/core/auth/authorization';
 import type { Mastra } from '@mastra/core/mastra';
 import { RequestContext } from '@mastra/core/request-context';
 import { MastraServerBase } from '@mastra/core/server';
@@ -806,72 +811,16 @@ export abstract class MastraServer<TApp, TRequest, TResponse> extends MastraServ
   }
 
   /**
-   * Validate that EE features have a valid license in production.
-   * Throws if RBAC or FGA is configured without a valid license outside dev/test environments.
+   * Retained for adapter compatibility. Provider-configured RBAC and FGA are
+   * native authorization features and do not require a commercial license.
    */
-  async validateEELicense(): Promise<void> {
-    const serverConfig = this.mastra.getServer();
-    const studioConfig = this.mastra.getStudio?.();
-    // Check both server and studio configs for EE features
-    const configuredFeatures = [
-      serverConfig?.rbac || studioConfig?.rbac ? 'RBAC' : null,
-      serverConfig?.fga || studioConfig?.fga ? 'FGA' : null,
-    ].filter((feature): feature is string => feature !== null);
-
-    if (configuredFeatures.length === 0) return;
-
-    try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
-      if (!isEEEnabled()) {
-        const featureList = configuredFeatures.join(' and ');
-        throw new Error(
-          `[mastra/auth-ee] ${featureList} ${configuredFeatures.length === 1 ? 'is' : 'are'} configured but no valid EE license was found.\n` +
-            `${featureList} ${configuredFeatures.length === 1 ? 'requires' : 'require'} a Mastra Enterprise License for production use.\n` +
-            'Set the MASTRA_EE_LICENSE environment variable with your license key.\n' +
-            'Learn more: https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE',
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
-        throw err;
-      }
-      // @mastra/core/auth/ee module not available; EE authorization cannot function.
-      throw new Error(
-        `[mastra/auth-ee] ${configuredFeatures.join(' and ')} ${configuredFeatures.length === 1 ? 'is' : 'are'} configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n` +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
-      );
-    }
-  }
+  async validateEELicense(): Promise<void> {}
 
   /**
-   * Validate that an Agent Builder configuration has a valid EE license.
-   * Throws if the editor is configured with builder support but no valid EE license is available.
+   * Retained for adapter compatibility. The open-source Agent Builder is not
+   * gated by the legacy enterprise license API.
    */
-  async validateAgentBuilderLicense(): Promise<void> {
-    const editor = this.mastra.getEditor();
-    if (!editor?.hasEnabledBuilderConfig?.()) return;
-
-    try {
-      const { isEEEnabled } = await import('@mastra/core/auth/ee');
-      if (!isEEEnabled()) {
-        throw new Error(
-          '[mastra/auth-ee] Agent Builder is configured but no valid EE license was found.\n' +
-            'Agent Builder requires a Mastra Enterprise License for production use.\n' +
-            'Set the MASTRA_EE_LICENSE environment variable with your license key.\n' +
-            'Learn more: https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE',
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('[mastra/auth-ee]')) {
-        throw err;
-      }
-      // @mastra/core/auth/ee module not available — Agent Builder cannot function
-      throw new Error(
-        '[mastra/auth-ee] Agent Builder is configured but the EE module (@mastra/core/auth/ee) could not be loaded.\n' +
-          'Ensure @mastra/core is updated to a version that includes EE support.',
-      );
-    }
-  }
+  async validateAgentBuilderLicense(): Promise<void> {}
 
   /**
    * Validate route-level FGA policy coverage when an FGA provider opts into

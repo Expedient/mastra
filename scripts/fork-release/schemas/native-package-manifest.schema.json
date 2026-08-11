@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/native-package-manifest-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactName", "roots"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "artifactName": {
+      "type": "string",
+      "pattern": "^@expedient/[a-z0-9][a-z0-9-]*$"
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?:mastra|@mastra/[a-z0-9][a-z0-9-]*)$"
+      }
+    }
+  }
+}

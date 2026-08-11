@@ -375,11 +375,10 @@ describe('GET /auth/permission-patterns', () => {
 
     expect(Array.isArray(result.patterns)).toBe(true);
     expect(result.patterns.length).toBeGreaterThan(0);
-    // Patterns are the keys of core's PERMISSION_PATTERNS; sanity-check a couple
-    // of well-known entries and the wildcard.
-    expect(result.patterns).toContain('*');
-    expect(result.patterns).toContain('agents:read');
-    // Every entry is a plain string (resource:action or wildcard).
+    expect(result.patterns).toEqual(
+      expect.arrayContaining(['*', 'agents:read', 'stored:*', 'stored-workflows:read', 'stored-skills:share']),
+    );
+    expect(result.patterns).not.toContain('stored-secrets:*');
     expect(result.patterns.every(p => typeof p === 'string')).toBe(true);
   });
 

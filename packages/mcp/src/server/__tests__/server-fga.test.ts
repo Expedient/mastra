@@ -1,7 +1,7 @@
 /**
  * @license Mastra Enterprise License - see ee/LICENSE
  */
-import { FGADeniedError, MastraFGAPermissions } from '@mastra/core/auth/ee';
+import { FGADeniedError, MastraFGAPermissions } from '@mastra/core/auth/authorization';
 import { createTool } from '@mastra/core/tools';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

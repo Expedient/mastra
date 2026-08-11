@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/native-compatibility-evidence-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceClass",
+    "reviewedBaselineCommit",
+    "releaseCommit",
+    "artifactSha256",
+    "manifestSha256",
+    "installationMode",
+    "results"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "evidenceClass": { "enum": ["release", "synthetic-fixture"] },
+    "reviewedBaselineCommit": { "$ref": "#/$defs/commit" },
+    "releaseCommit": { "$ref": "#/$defs/commit" },
+    "artifactSha256": { "$ref": "#/$defs/digest" },
+    "manifestSha256": { "$ref": "#/$defs/digest" },
+    "installationMode": { "const": "clean-room-installed-tarballs" },
+    "results": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "exitCode", "commandSha256", "outputSha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "status": { "const": "passed" },
+          "exitCode": { "const": 0 },
+          "commandSha256": { "$ref": "#/$defs/digest" },
+          "outputSha256": { "$ref": "#/$defs/digest" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

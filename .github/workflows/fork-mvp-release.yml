@@ -1,0 +1,153 @@
+name: Publish immutable Expedient Mastra MVP assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_commit:
+        description: Exact clean release commit to package
+        required: true
+        type: string
+      reviewed_baseline_commit:
+        description: Exact reviewed baseline commit
+        required: true
+        default: b23d4277e12e30816e154401d9d1e012d5d383e1
+        type: string
+      artifact_version:
+        description: Immutable aggregate version
+        required: true
+        default: 0.1.0-expedient.1
+        type: string
+      release_tag:
+        description: Immutable GitHub release tag
+        required: true
+        default: aictrl-native-v0.1.0-expedient.1
+        type: string
+      confirmation:
+        description: Enter RELEASE-AICTRL-MASTRA-MVP
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-mvp-release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  PNPM_VERSION: 11.13.1
+
+jobs:
+  release:
+    if: >-
+      inputs.confirmation == 'RELEASE-AICTRL-MASTRA-MVP' &&
+      github.repository == 'Expedient/mastra'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact release source with history
+        uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.release_commit }}
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@04be95cf3511ea51ebf9f224ddfb99cc7ab87cd4
+        with:
+          node-version: 22.23.1
+          package-manager-cache: false
+      - name: Activate reviewed pnpm toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack install
+          test "$(pnpm --version)" = "$PNPM_VERSION"
+      - name: Validate immutable release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$REVIEWED_BASELINE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_TAG" =~ ^aictrl-native-v[0-9A-Za-z._-]+$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          git merge-base --is-ancestor "$REVIEWED_BASELINE_COMMIT" "$RELEASE_COMMIT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release tag already exists; refusing mutation" >&2
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          REVIEWED_BASELINE_COMMIT: ${{ inputs.reviewed_baseline_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+      - name: Install and verify reviewed fork
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm fork-release:test
+          pnpm fork-release:schemas
+          pnpm fork-release:static
+          node --experimental-strip-types --test packages/core/src/license/index.test.ts
+      - name: Build exact package graph
+        run: |
+          pnpm build
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Assemble immutable package set
+        env:
+          ARTIFACT_VERSION: ${{ inputs.artifact_version }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          REVIEWED_BASELINE_COMMIT: ${{ inputs.reviewed_baseline_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          node scripts/fork-release/assemble-release-artifact.mjs \
+            --root . \
+            --output release/fork-npm-artifacts.tgz \
+            --provenance release/fork-provenance.json \
+            --name @expedient/mastra-native \
+            --version "$ARTIFACT_VERSION" \
+            --reviewed-baseline-commit "$REVIEWED_BASELINE_COMMIT" \
+            --release-commit "$RELEASE_COMMIT"
+          node scripts/fork-release/release-gate.mjs bundles --artifact release/fork-npm-artifacts.tgz
+      - name: Extract digest-bound installable tarballs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release/extracted release/assets
+          tar -xzf release/fork-npm-artifacts.tgz -C release/extracted
+          cp release/fork-npm-artifacts.tgz release/assets/
+          cp release/fork-provenance.json release/assets/
+          cp release/extracted/package/artifact-index.json release/assets/
+          cp release/extracted/package/tarballs/*.tgz release/assets/
+          (cd release/assets && find . -maxdepth 1 -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > release/SHA256SUMS
+          mv release/SHA256SUMS release/assets/SHA256SUMS
+          test "$(find release/assets -maxdepth 1 -name '*.tgz' | wc -l)" -ge 12
+      - name: Publish immutable GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.release_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release/notes.md <<EOF
+          Immutable Expedient Mastra package assets for AI CTRL.
+
+          Release commit: $RELEASE_COMMIT
+          Reviewed baseline: ${{ inputs.reviewed_baseline_commit }}
+          Artifact version: ${{ inputs.artifact_version }}
+
+          Consumers must pin each tarball URL and verify the SHA-256 recorded in artifact-index.json and SHA256SUMS. Full externally reviewed production-certification evidence remains tracked separately and does not weaken these immutable source/package checks.
+          EOF
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_COMMIT" \
+            --title "$RELEASE_TAG" \
+            --notes-file release/notes.md \
+            --latest=false \
+            release/assets/*

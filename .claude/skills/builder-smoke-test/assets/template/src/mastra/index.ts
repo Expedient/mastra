@@ -1,8 +1,7 @@
 import type { Context } from 'hono';
 import { Mastra } from '@mastra/core/mastra';
 import { Workspace, LocalFilesystem } from '@mastra/core/workspace';
-import { MastraEditor } from '@mastra/editor';
-import { createBuilderAgent } from '@mastra/editor/ee';
+import { createBuilderAgent, MastraEditor } from '@mastra/editor';
 import { LibSQLStore } from '@mastra/libsql';
 import { Observability, DefaultExporter, SensitiveDataFilter } from '@mastra/observability';
 import { SlackProvider } from '@mastra/slack';

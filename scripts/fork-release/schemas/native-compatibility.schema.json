@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/native-compatibility-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "installationMode", "areas"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 2 },
+    "installationMode": { "const": "clean-room-installed-tarballs" },
+    "areas": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "fixturePaths", "argv", "timeoutMs"],
+        "properties": {
+          "id": {
+            "enum": [
+              "studio",
+              "playground",
+              "clean-room-agent-builder",
+              "agents-tools",
+              "workflows-recovery",
+              "schedules",
+              "ag-ui",
+              "skills",
+              "workspaces",
+              "memory",
+              "settings-upgrade",
+              "evaluations",
+              "postgres",
+              "public-oss-apis"
+            ]
+          },
+          "description": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+          "fixturePaths": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "argv": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          },
+          "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 1200000 }
+        }
+      }
+    }
+  }
+}

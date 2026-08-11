@@ -1,4 +1,4 @@
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import { MastraBase } from '../base';
 import type { RequestContext } from '../di';
 import type { PubSub } from '../events/pubsub';

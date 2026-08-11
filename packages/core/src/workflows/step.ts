@@ -1,4 +1,4 @@
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import type { MastraScorers } from '../evals';
 import type { PubSub } from '../events';
 import type { Mastra } from '../mastra';

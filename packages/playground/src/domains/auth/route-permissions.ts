@@ -51,7 +51,6 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
 
   // Observability - uses 'observability' resource for traces/metrics, 'logs' for logs
   { route: '/metrics', permission: 'observability:read', name: 'Metrics' },
-  { route: '/intelligence', permission: 'observability:read', name: 'Intelligence' },
   { route: '/traces', permission: 'observability:read', name: 'Traces' },
   { route: '/logs', permission: 'logs:read', name: 'Logs' },
 

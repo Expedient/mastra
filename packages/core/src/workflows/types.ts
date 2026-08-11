@@ -1,7 +1,7 @@
 import type { WritableStream } from 'node:stream/web';
 import type { TextStreamPart } from '@internal/ai-sdk-v4';
 import type { z } from 'zod/v4';
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import type { SerializedError } from '../error';
 import type { MastraScorers } from '../evals';
 import type { PubSub } from '../events/pubsub';

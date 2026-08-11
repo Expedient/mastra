@@ -1,0 +1,7 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    { "name": "unknown", "version": "1.0.0", "licenses": [{ "license": { "id": "NOASSERTION" } }] },
+    { "name": "commercial", "version": "2.0.0", "licenses": [{ "expression": "LicenseRef-Commercial" }] }
+  ]
+}

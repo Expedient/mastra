@@ -1,10 +1,10 @@
 import type { Agent } from '../agent';
-import type { AgentBuilderOptions, IAgentBuilder } from '../agent-builder/ee';
 import type { MastraBrowser } from '../browser/browser';
 import type { MastraScorer } from '../evals';
 import type { IMastraLogger } from '../logger';
 import type { Mastra } from '../mastra';
 import type { MCPServerBase } from '../mcp';
+import type { SerializedMemoryConfig } from '../memory';
 import type { ProcessorProvider } from '../processor-provider';
 import type { RequestContext } from '../request-context';
 import type { BlobStore } from '../storage/domains/blobs/base';
@@ -51,6 +51,8 @@ import type {
   StorageListSkillsInput,
   StorageListSkillsOutput,
   StorageResolvedSkillType,
+  StorageBrowserRef,
+  StorageWorkspaceRef,
   StorageListSkillsResolvedOutput,
 } from '../storage/types';
 import type { ToolProvider } from '../tool-provider';
@@ -165,6 +167,73 @@ export interface WorkspaceProvider<TConfig = Record<string, unknown>> {
   createWorkspace(config: TConfig): Workspace<any, any, any> | Promise<Workspace<any, any, any>>;
 }
 
+export type BuilderProviderModelEntry = {
+  provider: string;
+  modelId?: string;
+  kind?: 'custom';
+};
+
+export type BuilderDefaultModelEntry = BuilderProviderModelEntry & { modelId: string };
+
+export interface BuilderModelPolicy {
+  active: boolean;
+  pickerVisible?: boolean;
+  allowed?: BuilderProviderModelEntry[];
+  default?: BuilderDefaultModelEntry;
+}
+
+export interface BuilderPickerAllowlist {
+  allowed?: string[];
+}
+
+export interface BuilderAgentFeatures {
+  tools: boolean;
+  agents: boolean;
+  workflows: boolean;
+  scorers: boolean;
+  skills: boolean;
+  memory: boolean;
+  variables: boolean;
+  favorites: boolean;
+  avatarUpload: boolean;
+  browser: boolean;
+  model: boolean;
+}
+
+export type BuilderAgentFeatureOptions = Partial<BuilderAgentFeatures>;
+
+export interface BuilderAgentModelOptions {
+  allowed?: BuilderProviderModelEntry[];
+  default?: BuilderDefaultModelEntry;
+}
+
+/** Admin-owned defaults and picker policies for agents created through Builder. */
+export interface BuilderAgentConfiguration {
+  models?: BuilderAgentModelOptions;
+  tools?: BuilderPickerAllowlist;
+  agents?: BuilderPickerAllowlist;
+  workflows?: BuilderPickerAllowlist;
+  memory?: SerializedMemoryConfig;
+  browser?: StorageBrowserRef;
+  workspace?: StorageWorkspaceRef;
+  [key: string]: unknown;
+}
+
+export interface AgentBuilderOptions {
+  enabled?: boolean;
+  features?: { agent?: BuilderAgentFeatureOptions };
+  configuration?: { agent?: BuilderAgentConfiguration };
+  registries?: { skillsSh?: { enabled?: boolean } };
+}
+
+/** Minimal Builder surface consumed by Studio and server integrations. */
+export interface IAgentBuilder {
+  readonly enabled: boolean;
+  getFeatures(): { agent: BuilderAgentFeatureOptions };
+  getConfiguration(): { agent?: BuilderAgentConfiguration };
+  getRegistries?(): { skillsSh?: { enabled?: boolean } };
+  getModelPolicyWarnings?(): string[];
+}
 export interface MastraEditorConfig {
   logger?: IMastraLogger;
   /** Tool providers for integration tools (e.g., Composio) */
@@ -205,10 +274,7 @@ export interface MastraEditorConfig {
    * @example { [myCloudProvider.id]: myCloudProvider }
    */
   workspaces?: Record<string, WorkspaceProvider>;
-  /**
-   * Configuration for the Agent Builder EE feature.
-   * When present and enabled, the editor provides agent building capabilities.
-   */
+  /** Agent Builder configuration. The Builder is enabled when present unless `enabled` is false. */
   builder?: AgentBuilderOptions;
   /**
    * Source of truth for agent overrides — controls how they are persisted and
@@ -466,6 +532,12 @@ export interface IMastraEditor {
    */
   readonly favorites?: IEditorFavoritesNamespace;
 
+  /** Whether this editor was configured with an enabled Agent Builder. */
+  hasEnabledBuilderConfig?(): boolean;
+
+  /** Resolve the configured Agent Builder, or `undefined` when it is disabled. */
+  resolveBuilder?(): Promise<IAgentBuilder | undefined>;
+
   /** Registered tool providers */
   getToolProvider(id: string): ToolProvider | undefined;
   /**
@@ -481,21 +553,6 @@ export interface IMastraEditor {
   getProcessorProvider(id: string): ProcessorProvider | undefined;
   /** List all registered processor providers */
   getProcessorProviders(): Record<string, ProcessorProvider>;
-
-  /**
-   * Check if the builder config is present and enabled.
-   * Sync. OSS-safe. Does NOT import @mastra/editor/ee.
-   * Optional for backwards compatibility.
-   */
-  hasEnabledBuilderConfig?(): boolean;
-
-  /**
-   * Resolve and return the Agent Builder instance.
-   * Dynamic-imports @mastra/editor/ee on first call.
-   * Returns undefined if builder is not configured or disabled.
-   * Optional for backwards compatibility.
-   */
-  resolveBuilder?(): Promise<IAgentBuilder | undefined>;
 
   /**
    * Returns the editor's configured source (`'code'` | `'db'`), or `undefined`

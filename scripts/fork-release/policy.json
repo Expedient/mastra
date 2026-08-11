@@ -1,0 +1,42 @@
+{
+  "$schema": "./schemas/policy.schema.json",
+  "schemaVersion": 2,
+  "prohibitedModuleSpecifiers": [
+    "@internal/auth/ee",
+    "@mastra/core/agent-builder/ee",
+    "@mastra/core/auth/ee",
+    "@mastra/editor/ee",
+    "@mastra/playground-ui/ee"
+  ],
+  "prohibitedPackageNames": [],
+  "prohibitedSourcePathSegments": [
+    "packages/_internals/auth/src/ee",
+    "packages/core/src/agent-builder/ee",
+    "packages/core/src/auth/ee",
+    "packages/editor/src/ee",
+    "packages/playground/src/ee",
+    "packages/playground-ui/src/ee"
+  ],
+  "prohibitedBundleTokens": [
+    "@internal/auth/ee",
+    "@mastra/core/agent-builder/ee",
+    "@mastra/core/auth/ee",
+    "@mastra/editor/ee",
+    "@mastra/playground-ui/ee",
+    "Mastra Enterprise Edition (EE) License",
+    "MASTRA_EE_LICENSE",
+    "MASTRA_LICENSE_KEY",
+    "MASTRA_LICENSE_URL",
+    "license.mastra.ai",
+    "mastra.eeTelemetryBridge"
+  ],
+  "deniedLicenseExpressions": [
+    "Mastra Enterprise Edition (EE) License",
+    "LicenseRef-Mastra-Enterprise",
+    "LicenseRef-Commercial",
+    "commercial",
+    "enterprise edition",
+    "proprietary"
+  ],
+  "scanExcludedPrefixes": []
+}

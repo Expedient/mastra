@@ -1,5 +1,5 @@
 import type { ModelMessage, ToolChoice } from '@internal/ai-sdk-v5';
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import type { MastraScorer, MastraScorers, ScoringSamplingConfig } from '../evals';
 import type { SystemMessage } from '../llm';
 import type { ProviderOptions } from '../llm/model/provider-options';

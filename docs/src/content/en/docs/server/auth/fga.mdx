@@ -30,7 +30,7 @@ Configure FGA in your Mastra server config alongside authentication and RBAC:
 
 ```typescript prettier: false
 import { Mastra } from '@mastra/core/mastra';
-import { MastraFGAPermissions } from '@mastra/core/auth/ee';
+import { MastraFGAPermissions } from '@mastra/core/auth/authorization';
 import { MastraAuthWorkos, MastraFGAWorkos } from '@mastra/auth-workos';
 
 const mastra = new Mastra({
@@ -97,7 +97,7 @@ For thread and memory checks, Mastra still passes the raw `threadId` as the reso
 The `permissionMapping` translates Mastra's internal permission strings to your FGA provider's permission slugs:
 
 ```typescript prettier: false
-import { MastraFGAPermissions } from '@mastra/core/auth/ee';
+import { MastraFGAPermissions } from '@mastra/core/auth/authorization';
 
 permissionMapping: {
   [MastraFGAPermissions.AGENTS_EXECUTE]: 'manage-workflows', // Mastra permission -> WorkOS permission slug
@@ -191,7 +191,7 @@ export const getProjectRoute = createRoute({
 Use `resolveRouteFGA()` only when route metadata must be derived centrally from route, params, or request context. A route map scales better than string-prefix checks:
 
 ```typescript prettier: false
-import type { FGARouteConfig, FGARouteResolver } from '@mastra/core/auth/ee';
+import type { FGARouteConfig, FGARouteResolver } from '@mastra/core/auth/authorization';
 
 const routeFGA = {
   'GET /billing/:accountId': {
@@ -235,8 +235,12 @@ Core agent, internal workflow, tool, and memory checks also pass `requestContext
 Implement `IFGAProvider` to use any FGA backend:
 
 ```typescript
-import { FGADeniedError } from '@mastra/core/auth/ee'
-import type { FGACheckParams, IFGAProvider, MastraFGAPermissionInput } from '@mastra/core/auth/ee'
+import { FGADeniedError } from '@mastra/core/auth/authorization'
+import type {
+  FGACheckParams,
+  IFGAProvider,
+  MastraFGAPermissionInput,
+} from '@mastra/core/auth/authorization'
 
 class MyFGAProvider implements IFGAProvider {
   async check(user: any, params: FGACheckParams): Promise<boolean> {
@@ -277,8 +281,8 @@ Autonomous and scheduled agents run without an end user. Mark these calls with a
 By default, a trusted actor skips the user-centric `require()` check after a tenant-scope check. To enforce per-agent least privilege, implement the optional `requireActor` method on your provider. It receives the actor and the same `FGACheckParams` as `require`, and throws `FGADeniedError` to deny. When your provider doesn't implement `requireActor`, the trusted-actor bypass is preserved, so adding it's backward compatible.
 
 ```typescript
-import { FGADeniedError } from '@mastra/core/auth/ee'
-import type { ActorSignal, FGACheckParams, IFGAProvider } from '@mastra/core/auth/ee'
+import { FGADeniedError } from '@mastra/core/auth/authorization'
+import type { ActorSignal, FGACheckParams, IFGAProvider } from '@mastra/core/auth/authorization'
 
 class MyFGAProvider implements IFGAProvider {
   // ...check, require, filterAccessible...

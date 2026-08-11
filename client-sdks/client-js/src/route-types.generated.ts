@@ -12379,7 +12379,7 @@ export type GetStoredAgents_QueryParams = {
         [key: string]: unknown;
       }
     | undefined;
-  /** When true, return only agents favorited by the caller (requires the `favorites` EE feature) */
+  /** When true, return only agents favorited by the caller (requires the Builder `favorites` feature) */
   favoritedOnly?: boolean | undefined;
   /** When set, treat the given subject (user/role) as the favoriting principal for `favoritedOnly` instead of the caller */
   pinFavoritedFor?: string | undefined;
@@ -16192,7 +16192,7 @@ export type GetStoredSkills_QueryParams = {
         [key: string]: unknown;
       }
     | undefined;
-  /** When true, return only skills favorited by the caller (requires the `favorites` EE feature) */
+  /** When true, return only skills favorited by the caller (requires the Builder `favorites` feature) */
   favoritedOnly?: boolean | undefined;
   /** When set, treat the given subject (user/role) as the favoriting principal for `favoritedOnly` instead of the caller */
   pinFavoritedFor?: string | undefined;

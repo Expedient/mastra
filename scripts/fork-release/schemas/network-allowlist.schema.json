@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/network-allowlist-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "exerciseId",
+    "artifactSha256",
+    "requiredRuntimeClasses",
+    "destinations",
+    "environment"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 2 },
+    "exerciseId": { "$ref": "#/$defs/nonplaceholder" },
+    "artifactSha256": { "$ref": "#/$defs/digest" },
+    "requiredRuntimeClasses": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "allOf": [{ "contains": { "const": "node" } }, { "contains": { "const": "browser" } }],
+      "items": { "enum": ["node", "browser", "worker", "native", "subprocess"] }
+    },
+    "destinations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol", "host", "ports", "basis"],
+        "properties": {
+          "protocol": { "enum": ["tcp", "udp"] },
+          "host": { "$ref": "#/$defs/host" },
+          "ports": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          },
+          "basis": { "$ref": "#/$defs/nonplaceholder" }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passThrough", "sensitive", "fixed"],
+      "properties": {
+        "passThrough": { "$ref": "#/$defs/envNames" },
+        "sensitive": { "$ref": "#/$defs/envNames" },
+        "fixed": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]*$" },
+          "additionalProperties": { "type": "string", "maxLength": 4096 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonplaceholder": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*(?:UNKNOWN|UNRESOLVED|TBD|PLACEHOLDER|N/A|NOT[ -]?APPLICABLE)).*\\S.*$"
+    },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "host": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|[0-9A-Fa-f:]+)$"
+    },
+    "envNames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" }
+    }
+  }
+}

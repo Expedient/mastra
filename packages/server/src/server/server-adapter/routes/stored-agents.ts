@@ -56,7 +56,7 @@ export const STORED_AGENTS_ROUTES: readonly ServerRoute[] = [
   DELETE_AGENT_VERSION_ROUTE,
 
   // ============================================================================
-  // Favorites (EE)
+  // Favorites (Builder)
   // ============================================================================
   FAVORITE_STORED_AGENT_ROUTE,
   UNFAVORITE_STORED_AGENT_ROUTE,

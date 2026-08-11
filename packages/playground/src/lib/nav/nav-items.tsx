@@ -14,7 +14,7 @@ import { ToolsIcon } from '@mastra/playground-ui/icons/ToolsIcon';
 import { TraceIcon } from '@mastra/playground-ui/icons/TraceIcon';
 import { WorkflowIcon } from '@mastra/playground-ui/icons/WorkflowIcon';
 import { WorkspacesIcon } from '@mastra/playground-ui/icons/WorkspacesIcon';
-import { BookIcon, LayoutGrid } from 'lucide-react';
+import { BookIcon } from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 
 export type NavIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -36,27 +36,6 @@ export interface NavSection {
   href?: string;
   items: NavItem[];
 }
-
-// The Intelligence sidebar link is gated behind the dedicated MASTRA_SIGNALS_UI flag
-// so the feature can be toggled independently of the platform config that the
-// Intelligence route itself consumes.
-const isSignalsEnabled =
-  typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).MASTRA_SIGNALS_UI === 'true';
-
-const signalsNavItem: NavItem = {
-  name: 'Intelligence',
-  url: '/intelligence',
-  activePaths: ['/intelligence'],
-  Icon: LayoutGrid,
-  docs: {
-    href: 'https://mastra.ai/en/docs/mastra-platform/trace-intelligence',
-    label: 'Trace intelligence documentation',
-  },
-  isOnMastraPlatform: true,
-  // Kept in the registry so /intelligence routes and breadcrumbs always resolve, but
-  // only surfaced in the sidebar/command palette when the flag is enabled.
-  hidden: !isSignalsEnabled,
-};
 
 export const mainNav: NavSection[] = [
   {
@@ -177,7 +156,6 @@ export const mainNav: NavSection[] = [
         docs: { href: 'https://mastra.ai/en/docs/observability/tracing/overview', label: 'Traces documentation' },
         isOnMastraPlatform: true,
       },
-      signalsNavItem,
       {
         name: 'Logs',
         url: '/logs',

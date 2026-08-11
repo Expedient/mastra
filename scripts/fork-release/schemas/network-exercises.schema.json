@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.expedient.invalid/fork-release/network-exercises-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "exerciseId", "exercises"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "exerciseId": { "type": "string", "minLength": 1, "pattern": ".*\\S.*" },
+    "exercises": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "properties": { "runtimeClass": { "const": "node" } },
+            "required": ["runtimeClass"]
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "properties": { "runtimeClass": { "const": "browser" } },
+            "required": ["runtimeClass"]
+          }
+        }
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runtimeClass", "argv", "timeoutMs"],
+        "properties": {
+          "runtimeClass": { "enum": ["node", "browser", "worker", "native", "subprocess"] },
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          },
+          "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 300000 }
+        }
+      }
+    }
+  }
+}

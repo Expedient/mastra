@@ -1526,7 +1526,7 @@ const server = new MCPServer({
 Use `fga.resourceMapping` and `fga.permissionMapping` when MCP clients need a different authorization scope than internal agent or workflow tool execution. The override applies only to `tools/list` and `tools/call` checks for this MCP server.
 
 ```typescript
-import { MastraFGAPermissions } from '@mastra/core/auth/ee'
+import { MastraFGAPermissions } from '@mastra/core/auth/authorization'
 
 const server = new MCPServer({
   id: 'my-server',

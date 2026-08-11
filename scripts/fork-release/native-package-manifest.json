@@ -1,0 +1,18 @@
+{
+  "$schema": "./schemas/native-package-manifest.schema.json",
+  "schemaVersion": 1,
+  "artifactName": "@expedient/mastra-native",
+  "roots": [
+    "mastra",
+    "@mastra/core",
+    "@mastra/server",
+    "@mastra/agent-builder",
+    "@mastra/editor",
+    "@mastra/playground-ui",
+    "@mastra/memory",
+    "@mastra/evals",
+    "@mastra/pg",
+    "@mastra/client-js",
+    "@mastra/react"
+  ]
+}

@@ -9,8 +9,8 @@ import type {
   SSOCallbackResult,
   SSOLoginConfig,
 } from '@internal/auth';
-import type { EEUser, IRBACProvider, RoleMapping } from '@internal/auth/ee';
-import { resolvePermissionsFromMapping, matchesPermission } from '@internal/auth/ee';
+import type { EEUser, IRBACProvider, RoleMapping } from '@internal/auth/authorization';
+import { resolvePermissionsFromMapping, matchesPermission } from '@internal/auth/authorization';
 import { MastraAuthProvider } from '@internal/auth/provider';
 import type { MastraAuthProviderOptions } from '@internal/auth/provider';
 

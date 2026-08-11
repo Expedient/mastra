@@ -4,7 +4,7 @@ import type { ProviderDefinedTool } from '@internal/external-types';
 import type { JSONSchema7 } from 'json-schema';
 import type { ZodSchema as ZodSchemaV3 } from 'zod/v3';
 import type { ZodType as ZodTypev4 } from 'zod/v4';
-import type { ActorSignal } from '../auth/ee';
+import type { ActorSignal } from '../auth/authorization';
 import type { AgentBackgroundConfig } from '../background-tasks';
 import type { MastraBrowser } from '../browser';
 import type { MastraServerCache } from '../cache/base';
