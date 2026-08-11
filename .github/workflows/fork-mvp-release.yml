@@ -95,7 +95,11 @@ jobs:
         run: |
           pnpm build
           pnpm exec vitest --config scripts/fork-release/vitest.license.config.mjs run packages/core/src/license/index.test.ts
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          build_status="$(git status --porcelain=v1 --untracked-files=all)"
+          if [ -n "$build_status" ]; then
+            printf '%s\n' 'Build mutated the reviewed checkout:' "$build_status" >&2
+            exit 1
+          fi
       - name: Assemble immutable package set
         env:
           ARTIFACT_VERSION: ${{ inputs.artifact_version }}
