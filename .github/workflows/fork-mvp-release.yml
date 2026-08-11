@@ -91,10 +91,10 @@ jobs:
           pnpm fork-release:test
           pnpm fork-release:schemas
           pnpm fork-release:static
-          pnpm exec vitest --config scripts/fork-release/vitest.license.config.mjs run packages/core/src/license/index.test.ts
       - name: Build exact package graph
         run: |
           pnpm build
+          pnpm exec vitest --config scripts/fork-release/vitest.license.config.mjs run packages/core/src/license/index.test.ts
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
       - name: Assemble immutable package set
         env:
