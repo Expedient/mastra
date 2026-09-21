@@ -11,7 +11,11 @@ import type {
   AgentEditorConfig,
 } from '@mastra/core/agent';
 import type { MessageListInput } from '@mastra/core/agent/message-list';
-import type { BuilderModelPolicy, DefaultModelEntry, ProviderModelEntry } from '@mastra/core/editor';
+import type {
+  BuilderModelPolicy,
+  BuilderDefaultModelEntry as DefaultModelEntry,
+  BuilderProviderModelEntry as ProviderModelEntry,
+} from '@mastra/core/editor';
 import type { ScoreRowData } from '@mastra/core/evals';
 import type { CoreMessage, Provider as ModelProviderId } from '@mastra/core/llm';
 import type {
@@ -2402,10 +2406,14 @@ export type BuilderAvailableModelsResponse = GeneratedResponse<'GET /editor/buil
 export type PermissionPattern = string;
 
 /**
+ * Response from GET /editor/builder/settings.
+ * Kept as a compatibility alias for the retired workflow-builder path.
+ */
+export type WorkflowBuilderSettingsResponse = GeneratedResponse<'GET /editor/builder/settings'>;
+
+/**
  * Response from GET /auth/permission-patterns.
  */
-export type WorkflowBuilderSettingsResponse = GeneratedResponse<'GET /editor/workflow-builder/settings'>;
-
 export type PermissionPatternsResponse = GeneratedResponse<'GET /auth/permission-patterns'>;
 
 /**

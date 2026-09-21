@@ -94,10 +94,7 @@ describe('DynamicWorkflow resource', () => {
     respond(response);
 
     await expect(client.getWorkflowBuilderSettings()).resolves.toEqual(response);
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:4111/api/editor/workflow-builder/settings',
-      expect.any(Object),
-    );
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4111/api/editor/builder/settings', expect.any(Object));
   });
 
   it('drives create, retrieve, execute, replace, and delete through the client resources', async () => {

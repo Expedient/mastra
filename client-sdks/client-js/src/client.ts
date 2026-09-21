@@ -1467,7 +1467,7 @@ export class MastraClient extends BaseResource {
    * Retrieves workflow builder settings for UI gating.
    */
   public getWorkflowBuilderSettings(): Promise<WorkflowBuilderSettingsResponse> {
-    return this.request('/editor/workflow-builder/settings');
+    return this.request('/editor/builder/settings');
   }
 
   // ============================================================================
