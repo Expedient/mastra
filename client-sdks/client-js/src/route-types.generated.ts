@@ -147,7 +147,7 @@ type InputShared_Auxiliary_247 =
           };
     };
 
-type InputShared_Auxiliary_662 =
+type InputShared_Auxiliary_663 =
   | {
       op: 'eq' | 'ne' | 'lt' | 'lte' | 'gt' | 'gte';
       left:
@@ -192,27 +192,27 @@ type InputShared_Auxiliary_662 =
     }
   | {
       op: 'and' | 'or';
-      args: InputShared_Auxiliary_662[];
+      args: InputShared_Auxiliary_663[];
     }
   | {
       op: 'not';
-      arg: InputShared_Auxiliary_662;
+      arg: InputShared_Auxiliary_663;
     };
 
-type InputShared_Auxiliary_736 = {
+type InputShared_Auxiliary_737 = {
   id?: string | undefined;
   name: string;
   type: 'file' | 'folder';
   content?: string | undefined;
-  children?: InputShared_Auxiliary_736[] | undefined;
+  children?: InputShared_Auxiliary_737[] | undefined;
 };
 
-type Shared_Auxiliary_744 = {
+type Shared_Auxiliary_746 = {
   id?: string | undefined;
   name: string;
   type: 'file' | 'folder';
   content?: string | undefined;
-  children?: Shared_Auxiliary_744[] | undefined;
+  children?: Shared_Auxiliary_746[] | undefined;
 };
 
 type InputShared_Type_0 = {
@@ -1729,7 +1729,7 @@ type InputShared_Type_86 = {
       }
     | undefined;
   steps: InputShared_Type_81[];
-  predicates: InputShared_Auxiliary_662[];
+  predicates: InputShared_Auxiliary_663[];
 };
 
 type InputShared_Type_87 = {
@@ -1743,7 +1743,7 @@ type InputShared_Type_87 = {
     | undefined;
   step: InputShared_Type_81;
   loopType: 'dowhile' | 'dountil';
-  predicate: InputShared_Auxiliary_662;
+  predicate: InputShared_Auxiliary_663;
 };
 
 type InputShared_Type_88 =
@@ -4055,7 +4055,7 @@ type Shared_Type_79 = {
   /** List of asset file paths */
   assets?: string[] | undefined;
   /** Full file tree structure for the skill */
-  files?: Shared_Auxiliary_744[] | undefined;
+  files?: Shared_Auxiliary_746[] | undefined;
   /** Additional metadata for the skill */
   metadata?:
     | {
@@ -17966,7 +17966,7 @@ export type PostStoredSkills_Body = {
   /** List of asset file paths */
   assets?: string[] | undefined;
   /** Full file tree structure for the skill */
-  files?: InputShared_Auxiliary_736[] | undefined;
+  files?: InputShared_Auxiliary_737[] | undefined;
   /** Additional metadata for the skill */
   metadata?:
     | {
@@ -18024,7 +18024,7 @@ export type PatchStoredSkillsStoredSkillId_Body = {
   /** List of asset file paths */
   assets?: (string[] | undefined) | undefined;
   /** Full file tree structure for the skill */
-  files?: (InputShared_Auxiliary_736[] | undefined) | undefined;
+  files?: (InputShared_Auxiliary_737[] | undefined) | undefined;
   /** Additional metadata for the skill */
   metadata?:
     | (
