@@ -18,7 +18,7 @@ import path from 'node:path';
 import { GateError, readJson, redactOutput, schemaFindings, sha256 } from './lib.mjs';
 
 const EXPECTED_NODE = '22.23.1';
-const EXPECTED_PNPM = '11.13.1';
+const EXPECTED_PNPM = '11.21.0';
 const NATIVE_PACKAGE = /^(?:mastra|@mastra\/[a-z0-9][a-z0-9-]*)$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const SEMVER =

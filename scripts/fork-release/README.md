@@ -6,7 +6,7 @@ These credential-free gates build and verify one immutable npm bundle from the r
 
 The checked-in `native-package-manifest.json` names the native roots required for Studio (`mastra`), Playground (`@mastra/playground-ui`), Agent Builder (`@mastra/agent-builder` and `@mastra/editor`), core/server, memory, evaluations, PostgreSQL, and their in-workspace package closure. `@mastra/inngest` is deliberately not a release root or an authoritative runtime.
 
-Build once with Node 22.23.1 and the integrity-qualified `pnpm@11.13.1` from the root `packageManager`, then pack the selected packages into an npm-installable Expedient-owned transport bundle:
+Build once with Node 22.23.1 and the integrity-qualified `pnpm@11.21.0` from the root `packageManager`, then pack the selected packages into an npm-installable Expedient-owned transport bundle:
 
 ```sh
 corepack enable
