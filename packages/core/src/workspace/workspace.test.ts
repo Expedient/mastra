@@ -16,6 +16,8 @@ import {
 import { CompositeFilesystem, LocalFilesystem } from './filesystem';
 import { LSPManager } from './lsp';
 import { LocalSandbox } from './sandbox';
+import { SearchEngine } from './search/search-engine';
+import { ResolvedSourceWorkspaceSkills } from './skills/workspace-skills';
 import { createWorkspaceTools } from './tools';
 import { Workspace } from './workspace';
 
@@ -524,6 +526,122 @@ Line 3 conclusion`;
       expect(await workspace.search('lazy')).toEqual([]);
     });
 
+    it('stop() stops the sandbox but keeps the workspace usable', async () => {
+      const filesystem = new LocalFilesystem({ basePath: tempDir });
+      const sandbox = new LocalSandbox({ workingDirectory: tempDir });
+      const workspace = new Workspace({ filesystem, sandbox, bm25: true });
+
+      await workspace.index('/doc1.txt', 'The quick brown fox jumps over the lazy dog');
+      await sandbox._start();
+      expect(sandbox.status).toBe('running');
+
+      await workspace.stop();
+
+      expect(sandbox.status).toBe('stopped');
+      // Not a teardown: the search index survives and the workspace stays usable.
+      expect((await workspace.search('quick')).length).toBeGreaterThan(0);
+    });
+
+    it('coalesces concurrent stop() calls onto one in-flight teardown', async () => {
+      let stops = 0;
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      const sandbox = {
+        provider: 'fake',
+        stop: async () => {
+          stops += 1;
+          await gate;
+        },
+      } as any;
+      const workspace = new Workspace({
+        filesystem: new LocalFilesystem({ basePath: tempDir }),
+        sandbox,
+      });
+
+      const first = workspace.stop();
+      const second = workspace.stop();
+      release();
+      await Promise.all([first, second]);
+
+      expect(stops).toBe(1);
+    });
+
+    it('destroy() waits for an in-flight stop() and wins', async () => {
+      let stopStarted!: () => void;
+      const stopStartedGate = new Promise<void>(resolve => {
+        stopStarted = resolve;
+      });
+      let releaseStop!: () => void;
+      const stopGate = new Promise<void>(resolve => {
+        releaseStop = resolve;
+      });
+      const order: string[] = [];
+      const sandbox = {
+        provider: 'fake',
+        stop: async () => {
+          order.push('stop:start');
+          stopStarted();
+          await stopGate;
+          order.push('stop:end');
+        },
+        destroy: async () => {
+          order.push('destroy');
+        },
+      } as any;
+      const workspace = new Workspace({
+        filesystem: new LocalFilesystem({ basePath: tempDir }),
+        sandbox,
+      });
+
+      const stopping = workspace.stop();
+      await stopStartedGate;
+      const destroying = workspace.destroy();
+      releaseStop();
+      await Promise.all([stopping, destroying]);
+
+      // The destroy must not interleave with the stop's teardown.
+      expect(order).toEqual(['stop:start', 'stop:end', 'destroy']);
+      expect(workspace.status).toBe('destroyed');
+    });
+
+    it('concurrent destroy() calls during an in-flight stop() destroy once', async () => {
+      let stopStarted!: () => void;
+      const stopStartedGate = new Promise<void>(resolve => {
+        stopStarted = resolve;
+      });
+      let releaseStop!: () => void;
+      const stopGate = new Promise<void>(resolve => {
+        releaseStop = resolve;
+      });
+      let destroys = 0;
+      const sandbox = {
+        provider: 'fake',
+        stop: async () => {
+          stopStarted();
+          await stopGate;
+        },
+        destroy: async () => {
+          destroys += 1;
+        },
+      } as any;
+      const workspace = new Workspace({
+        filesystem: new LocalFilesystem({ basePath: tempDir }),
+        sandbox,
+      });
+
+      const stopping = workspace.stop();
+      await stopStartedGate;
+      const firstDestroy = workspace.destroy();
+      const secondDestroy = workspace.destroy();
+      releaseStop();
+      await Promise.all([stopping, firstDestroy, secondDestroy]);
+
+      expect(destroys).toBe(1);
+      expect(workspace.status).toBe('destroyed');
+    });
+
     it('should release the search index even when a resource fails to destroy', async () => {
       const filesystem = new LocalFilesystem({ basePath: tempDir });
       const workspace = new Workspace({
@@ -641,6 +759,384 @@ Line 3 conclusion`;
       const skills1 = workspace.skills;
       const skills2 = workspace.skills;
       expect(skills1).toBe(skills2);
+    });
+
+    describe('with a dynamic filesystem resolver', () => {
+      let remoteDir: string;
+      let hostDir: string;
+      let originalCwd: string;
+
+      beforeEach(async () => {
+        remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-remote-'));
+        hostDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-host-'));
+        await fs.mkdir(path.join(remoteDir, 'skills', 'demo'), { recursive: true });
+        await fs.writeFile(
+          path.join(remoteDir, 'skills', 'demo', 'SKILL.md'),
+          skillContent('demo', 'a skill that lives in the resolved filesystem'),
+        );
+        // Control skill on the server's local disk that must never be discovered
+        await fs.mkdir(path.join(hostDir, 'skills', 'leaked-from-local-disk'), { recursive: true });
+        await fs.writeFile(
+          path.join(hostDir, 'skills', 'leaked-from-local-disk', 'SKILL.md'),
+          skillContent('leaked-from-local-disk', 'a skill that lives on the host disk'),
+        );
+        originalCwd = process.cwd();
+        process.chdir(hostDir);
+      });
+
+      afterEach(async () => {
+        process.chdir(originalCwd);
+        await fs.rm(remoteDir, { recursive: true, force: true });
+        await fs.rm(hostDir, { recursive: true, force: true });
+      });
+
+      it('discovers skills from the resolved filesystem, not the host disk', async () => {
+        const remoteFs = new LocalFilesystem({ basePath: remoteDir });
+        const resolver = vi.fn(async () => remoteFs);
+        const workspace = new Workspace({
+          filesystem: resolver,
+          skills: ['skills'],
+        });
+
+        const requestContext = new RequestContext();
+        const skills = await workspace.skills!.getScoped!({ requestContext });
+        await skills.maybeRefresh({ requestContext });
+        const listed = await skills.list();
+
+        expect(listed.map(s => `${s.name} @ ${s.path}`)).toEqual(['demo @ skills/demo']);
+        expect(resolver).toHaveBeenCalledWith({ requestContext });
+        expect(await skills.get('leaked-from-local-disk')).toBeNull();
+      });
+
+      it('resolves skills per request when the resolver returns different filesystems', async () => {
+        const tenantBDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-tenant-b-'));
+        await fs.mkdir(path.join(tenantBDir, 'skills', 'beta'), { recursive: true });
+        await fs.writeFile(path.join(tenantBDir, 'skills', 'beta', 'SKILL.md'), skillContent('beta', 'tenant B only'));
+        try {
+          const fsA = new LocalFilesystem({ basePath: remoteDir });
+          const fsB = new LocalFilesystem({ basePath: tenantBDir });
+          const workspace = new Workspace({
+            filesystem: ({ requestContext }) => (requestContext.get('tenant') === 'b' ? fsB : fsA),
+            skills: ['skills'],
+          });
+
+          const ctxA = new RequestContext([['tenant', 'a']]);
+          const ctxB = new RequestContext([['tenant', 'b']]);
+          const [skillsA, skillsB] = await Promise.all([
+            workspace.skills!.getScoped!({ requestContext: ctxA }),
+            workspace.skills!.getScoped!({ requestContext: ctxB }),
+          ]);
+
+          expect((await skillsA.list()).map(s => s.name)).toEqual(['demo']);
+          expect((await skillsB.list()).map(s => s.name)).toEqual(['beta']);
+          expect(await skillsA.get('beta')).toBeNull();
+          expect(await skillsB.get('demo')).toBeNull();
+
+          // Same request context returns the same scoped view; same filesystem shares the view across requests
+          expect(await workspace.skills!.getScoped!({ requestContext: ctxA })).toBe(skillsA);
+          expect(await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'a']]) })).toBe(
+            skillsA,
+          );
+        } finally {
+          await fs.rm(tenantBDir, { recursive: true, force: true });
+        }
+      });
+
+      it('isolates search results between resolved filesystems', async () => {
+        const tenantBDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-tenant-b-'));
+        await fs.mkdir(path.join(tenantBDir, 'skills', 'demo'), { recursive: true });
+        await fs.writeFile(
+          path.join(tenantBDir, 'skills', 'demo', 'SKILL.md'),
+          `---\nname: demo\ndescription: same-named skill\n---\n\nTenant B exclusive zebra content\n`,
+        );
+        try {
+          const fsA = new LocalFilesystem({ basePath: remoteDir });
+          const fsB = new LocalFilesystem({ basePath: tenantBDir });
+          const workspace = new Workspace({
+            filesystem: ({ requestContext }) => (requestContext.get('tenant') === 'b' ? fsB : fsA),
+            skills: ['skills'],
+          });
+
+          const skillsA = await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'a']]) });
+          const skillsB = await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'b']]) });
+          await Promise.all([skillsA.list(), skillsB.list()]);
+
+          expect((await skillsA.search('zebra')).map(r => r.skillName)).toEqual([]);
+          expect((await skillsB.search('zebra')).map(r => r.skillName)).toEqual(['demo']);
+        } finally {
+          await fs.rm(tenantBDir, { recursive: true, force: true });
+        }
+      });
+
+      it('serves direct calls through the resolver instead of the host disk', async () => {
+        const remoteFs = new LocalFilesystem({ basePath: remoteDir });
+        const workspace = new Workspace({
+          filesystem: () => remoteFs,
+          skills: ['skills'],
+        });
+
+        expect((await workspace.skills!.list()).map(s => s.name)).toEqual(['demo']);
+        expect(await workspace.skills!.has('demo')).toBe(true);
+        expect(await workspace.skills!.has('leaked-from-local-disk')).toBe(false);
+      });
+
+      it('keeps resolved skill documents out of unscoped workspace.search()', async () => {
+        const tenantBDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-tenant-b-'));
+        await fs.mkdir(path.join(tenantBDir, 'skills', 'secret'), { recursive: true });
+        await fs.writeFile(
+          path.join(tenantBDir, 'skills', 'secret', 'SKILL.md'),
+          `---\nname: secret\ndescription: tenant b only\n---\n\nTenant B exclusive zebra content\n`,
+        );
+        try {
+          const fsA = new LocalFilesystem({ basePath: remoteDir });
+          const fsB = new LocalFilesystem({ basePath: tenantBDir });
+          const workspace = new Workspace({
+            filesystem: ({ requestContext }) => (requestContext.get('tenant') === 'b' ? fsB : fsA),
+            skills: ['skills'],
+            bm25: true,
+          });
+
+          const skillsB = await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'b']]) });
+          await skillsB.list();
+          expect((await skillsB.search('zebra')).map(r => r.skillName)).toEqual(['secret']);
+
+          // Unscoped workspace search must not surface tenant B's skill content
+          expect(await workspace.search('zebra')).toEqual([]);
+        } finally {
+          await fs.rm(tenantBDir, { recursive: true, force: true });
+        }
+      });
+
+      it('never shares a skills view between distinct sources that carry the same id', async () => {
+        const tenantBDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-tenant-b-'));
+        await fs.mkdir(path.join(tenantBDir, 'skills', 'secret'), { recursive: true });
+        await fs.writeFile(
+          path.join(tenantBDir, 'skills', 'secret', 'SKILL.md'),
+          `---\nname: secret\ndescription: tenant b only\n---\n\nTenant B content\n`,
+        );
+        try {
+          const workspace = new Workspace({
+            filesystem: ({ requestContext }) =>
+              new LocalFilesystem({
+                basePath: requestContext.get('tenant') === 'b' ? tenantBDir : remoteDir,
+                id: 'fs',
+              }),
+            skills: ['skills'],
+          });
+
+          const skillsA = await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'a']]) });
+          const skillsB = await workspace.skills!.getScoped!({ requestContext: new RequestContext([['tenant', 'b']]) });
+
+          expect((await skillsA.list()).map(s => s.name)).toEqual(['demo']);
+          expect((await skillsB.list()).map(s => s.name)).toEqual(['secret']);
+        } finally {
+          await fs.rm(tenantBDir, { recursive: true, force: true });
+        }
+      });
+
+      it('bounds indexed documents when the resolver returns a fresh filesystem per request', async () => {
+        const searchEngine = new SearchEngine({ bm25: true });
+        const indexSpy = vi.spyOn(searchEngine, 'index');
+        const removeSpy = vi.spyOn(searchEngine, 'remove');
+
+        const skills = new ResolvedSourceWorkspaceSkills({
+          source: () => new LocalFilesystem({ basePath: remoteDir }),
+          skills: ['skills'],
+          searchEngine,
+          maxCachedSources: 2,
+        });
+
+        for (let i = 0; i < 5; i++) {
+          const scoped = await skills.getScoped({ requestContext: new RequestContext() });
+          await scoped.list();
+        }
+
+        const indexedIds = new Set(indexSpy.mock.calls.map(([doc]) => doc.id));
+        expect(indexedIds.size).toBe(5);
+        // Three sources evicted → their documents removed
+        expect(removeSpy).toHaveBeenCalledTimes(3);
+        const removedIds = new Set(removeSpy.mock.calls.map(([id]) => id));
+        for (const id of removedIds) expect(indexedIds.has(id)).toBe(true);
+
+        const scoped = await skills.getScoped({ requestContext: new RequestContext() });
+        expect((await scoped.search('demo')).map(r => r.skillName)).toEqual(['demo']);
+      });
+
+      it('keeps search working on a view that was evicted while still in use', async () => {
+        const searchEngine = new SearchEngine({ bm25: true });
+        const skills = new ResolvedSourceWorkspaceSkills({
+          source: () => new LocalFilesystem({ basePath: remoteDir }),
+          skills: ['skills'],
+          searchEngine,
+          maxCachedSources: 1,
+        });
+
+        const ctxA = new RequestContext();
+        const viewA = await skills.getScoped({ requestContext: ctxA });
+        await viewA.list();
+        expect((await viewA.search('demo')).map(r => r.skillName)).toEqual(['demo']);
+
+        // A second source evicts A and releases its search documents
+        const viewB = await skills.getScoped({ requestContext: new RequestContext() });
+        await viewB.list();
+        expect(searchEngine.countByPrefix('skill-scope:')).toBe(1);
+
+        // A retained view (and the request-context cache) still searches correctly…
+        expect((await viewA.search('demo')).map(r => r.skillName)).toEqual(['demo']);
+        const viewAAgain = await skills.getScoped({ requestContext: ctxA });
+        expect((await viewAAgain.search('demo')).map(r => r.skillName)).toEqual(['demo']);
+        // …and re-admission evicted B instead of growing the index
+        expect(searchEngine.countByPrefix('skill-scope:')).toBe(1);
+
+        // A refresh on the now-evicted B must not repopulate its namespace without re-admitting
+        await viewB.refresh();
+        expect(searchEngine.countByPrefix('skill-scope:')).toBe(1);
+        expect((await viewB.search('demo')).map(r => r.skillName)).toEqual(['demo']);
+        expect(searchEngine.countByPrefix('skill-scope:')).toBe(1);
+      });
+
+      it('returns to the cache bound after concurrent live views re-admit each other', async () => {
+        // Multiple skills so a readmit loop can be interrupted by another view's eviction
+        for (const name of ['alpha', 'beta', 'gamma']) {
+          await fs.mkdir(path.join(remoteDir, 'skills', name), { recursive: true });
+          await fs.writeFile(
+            path.join(remoteDir, 'skills', name, 'SKILL.md'),
+            `---\nname: ${name}\ndescription: ${name} skill\n---\n# ${name}\nzebra`,
+          );
+        }
+        const searchEngine = new SearchEngine({ bm25: true });
+        const skills = new ResolvedSourceWorkspaceSkills({
+          source: () => new LocalFilesystem({ basePath: remoteDir }),
+          skills: ['skills'],
+          searchEngine,
+          maxCachedSources: 1,
+        });
+
+        const views = await Promise.all(
+          [1, 2, 3].map(() => skills.getScoped({ requestContext: new RequestContext() })),
+        );
+        await Promise.all(views.map(view => view.list()));
+        const skillsPerSource = (await views[0]!.list()).length;
+
+        for (let round = 0; round < 3; round++) {
+          const results = await Promise.all(views.map(view => view.search('zebra')));
+          expect(results.map(result => result.map(item => item.skillName).sort())).toEqual([
+            ['alpha', 'beta', 'gamma'],
+            ['alpha', 'beta', 'gamma'],
+            ['alpha', 'beta', 'gamma'],
+          ]);
+        }
+
+        // Only one source may hold documents once everything settles
+        expect(searchEngine.countByPrefix('skill-scope:')).toBe(skillsPerSource);
+      });
+
+      it('rejects a search engine that cannot remove evicted documents', () => {
+        const searchEngine = {
+          index: vi.fn(),
+          search: vi.fn(),
+          clear: vi.fn(),
+        } as unknown as SearchEngine;
+
+        expect(
+          () =>
+            new ResolvedSourceWorkspaceSkills({
+              source: () => new LocalFilesystem({ basePath: remoteDir }),
+              skills: ['skills'],
+              searchEngine,
+            }),
+        ).toThrow('searchEngine must implement remove()');
+      });
+
+      it('rejects invalid maxCachedSources', () => {
+        for (const maxCachedSources of [Number.NaN, Number.POSITIVE_INFINITY, 0, -3, 1.5]) {
+          expect(
+            () =>
+              new ResolvedSourceWorkspaceSkills({
+                source: () => new LocalFilesystem({ basePath: remoteDir }),
+                skills: ['skills'],
+                maxCachedSources,
+              }),
+          ).toThrow(RangeError);
+        }
+      });
+    });
+
+    it('honors topK for unscoped documents when scoped skill documents outrank them', async () => {
+      const tenantDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-topk-'));
+      await fs.mkdir(path.join(tenantDir, 'skills'), { recursive: true });
+      for (let i = 0; i < 5; i++) {
+        await fs.mkdir(path.join(tenantDir, 'skills', `zebra-${i}`), { recursive: true });
+        await fs.writeFile(
+          path.join(tenantDir, 'skills', `zebra-${i}`, 'SKILL.md'),
+          `---\nname: zebra-${i}\ndescription: zebra zebra zebra\n---\n\nzebra zebra zebra zebra\n`,
+        );
+      }
+      try {
+        const workspace = new Workspace({
+          filesystem: () => new LocalFilesystem({ basePath: tenantDir }),
+          skills: ['skills'],
+          bm25: true,
+        });
+        // Index scoped skill documents that strongly match the query
+        await (await workspace.skills!.getScoped!({ requestContext: new RequestContext() })).list();
+        // Two plain workspace documents that match more weakly
+        await workspace.index('doc-1', 'a zebra note');
+        await workspace.index('doc-2', 'another zebra note');
+
+        const results = await workspace.search('zebra', { topK: 2 });
+        expect(results.map(r => r.id).sort()).toEqual(['doc-1', 'doc-2']);
+      } finally {
+        await fs.rm(tenantDir, { recursive: true, force: true });
+      }
+    });
+
+    it('excludes persisted scoped skill vectors before applying topK', async () => {
+      const persistedVectors = [
+        {
+          id: 'scoped-skill',
+          score: 1,
+          metadata: { id: 'scoped-skill', text: 'zebra zebra zebra', skillScope: 'owner-previous/source-0' },
+        },
+        {
+          id: 'workspace-doc',
+          score: 0.5,
+          metadata: { id: 'workspace-doc', text: 'zebra note', category: 'docs' },
+        },
+      ];
+      const query = vi.fn(async ({ topK, filter }: { topK: number; filter?: Record<string, any> }) => {
+        const branches = filter?.$and ?? [filter];
+        const excludesScoped = branches.some((branch: Record<string, any>) => branch?.skillScope?.$exists === false);
+        const category = branches.find((branch: Record<string, any>) => branch?.category)?.category;
+        return persistedVectors
+          .filter(result => !excludesScoped || result.metadata.skillScope === undefined)
+          .filter(result => category === undefined || result.metadata.category === category)
+          .slice(0, topK);
+      });
+      const workspace = new Workspace({
+        filesystem: new LocalFilesystem({ basePath: tempDir }),
+        vectorStore: {
+          id: 'persistent-vector-store',
+          query,
+          upsert: vi.fn(async () => []),
+          deleteVector: vi.fn(async () => {}),
+        } as any,
+        embedder: vi.fn(async () => [0.1, 0.2, 0.3]),
+      });
+
+      const results = await workspace.search('zebra', {
+        mode: 'vector',
+        topK: 1,
+        filter: { category: 'docs' },
+      });
+
+      expect(results.map(result => result.id)).toEqual(['workspace-doc']);
+      expect(query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          topK: 1,
+          filter: { $and: [{ category: 'docs' }, { skillScope: { $exists: false } }] },
+        }),
+      );
     });
 
     it('should de-duplicate symlinked skill aliases when workspace skills use LocalFilesystem as the source', async () => {
@@ -1408,6 +1904,53 @@ Line 3 conclusion`;
   // Auto-indexing (rebuildSearchIndex via init)
   // ===========================================================================
   describe('auto-indexing', () => {
+    it('should rebuild configured autoIndexPaths without starting the sandbox', async () => {
+      await fs.mkdir(path.join(tempDir, 'docs'), { recursive: true });
+      await fs.writeFile(path.join(tempDir, 'docs', 'readme.txt'), 'Welcome to the project');
+
+      const filesystem = new LocalFilesystem({ basePath: tempDir });
+      const sandbox = new LocalSandbox({ workingDirectory: tempDir });
+      const startSpy = vi.spyOn(sandbox, 'start');
+      const workspace = new Workspace({
+        filesystem,
+        sandbox,
+        bm25: true,
+        autoIndexPaths: ['docs'],
+      });
+
+      await workspace.rebuildSearchIndex();
+
+      const results = await workspace.search('project');
+      expect(results.some(r => r.id === 'docs/readme.txt')).toBe(true);
+      expect(startSpy).not.toHaveBeenCalled();
+
+      await workspace.destroy();
+    });
+
+    it('should use explicit paths instead of configured autoIndexPaths when rebuilding', async () => {
+      await fs.mkdir(path.join(tempDir, 'docs'), { recursive: true });
+      await fs.mkdir(path.join(tempDir, 'support'), { recursive: true });
+      await fs.writeFile(path.join(tempDir, 'docs', 'api.txt'), 'API reference documentation');
+      await fs.writeFile(path.join(tempDir, 'support', 'faq.txt'), 'Frequently asked questions');
+
+      const filesystem = new LocalFilesystem({ basePath: tempDir });
+      const workspace = new Workspace({
+        filesystem,
+        bm25: true,
+        autoIndexPaths: ['docs'],
+      });
+
+      await workspace.rebuildSearchIndex(['support']);
+
+      const faqResults = await workspace.search('frequently asked');
+      expect(faqResults.some(r => r.id === 'support/faq.txt')).toBe(true);
+
+      const docsResults = await workspace.search('API reference');
+      expect(docsResults.some(r => r.id === 'docs/api.txt')).toBe(false);
+
+      await workspace.destroy();
+    });
+
     it('should auto-index files during init when autoIndexPaths configured', async () => {
       // Create test files on disk
       await fs.mkdir(path.join(tempDir, 'docs'), { recursive: true });
@@ -2816,6 +3359,19 @@ Line 3 conclusion`;
       const workspace = new Workspace({ sandbox, lsp: true });
 
       expect(workspace.lsp).toBeInstanceOf(LSPManager);
+    });
+
+    it('keeps the LSP manager usable after stop()', async () => {
+      const sandbox = new LocalSandbox({ workingDirectory: tempDir });
+      const workspace = new Workspace({ sandbox, lsp: true });
+      const before = workspace.lsp;
+      expect(before).toBeInstanceOf(LSPManager);
+
+      await workspace.stop();
+
+      // shutdownAll() drains and resets the manager, so the same instance
+      // spawns clients again on the next diagnostics request.
+      expect(workspace.lsp).toBe(before);
     });
 
     it('does not create LSPManager when lsp is not configured', async () => {

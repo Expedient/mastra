@@ -1,7 +1,7 @@
-import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, posix } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, posix, relative } from 'node:path';
 import { MastraBundler } from '@mastra/core/bundler';
 import { MastraError, ErrorDomain, ErrorCategory } from '@mastra/core/error';
 import type { Config } from '@mastra/core/mastra';
@@ -11,14 +11,13 @@ import fsExtra, { copy, ensureDir, emptyDir, readJSON } from 'fs-extra/esm';
 import type { InputOptions, OutputOptions } from 'rollup';
 import { glob } from 'tinyglobby';
 import { analyzeBundle } from '../build/analyze';
-import { createBundler as createBundlerUtil, getInputOptions } from '../build/bundler';
+import { createBundler as createBundlerUtil, getInputOptions, getUnresolvedWorkspaceImport } from '../build/bundler';
 import { getBundlerOptions } from '../build/bundlerOptions';
 import type { BundlerOptions, ExternalDependencyInfo } from '../build/types';
 import type { BundlerPlatform } from '../build/utils';
-import { getPackageName, isBareModuleSpecifier, slash } from '../build/utils';
+import { getPackageName, isBareModuleSpecifier, shouldSkipInstall, slash } from '../build/utils';
 import { DepsService } from '../services/deps';
 import { FileService } from '../services/fs';
-import { resolveExtraEntries } from './entries';
 import {
   collectTransitiveWorkspaceDependencies,
   getWorkspaceInformation,
@@ -283,6 +282,11 @@ export const applySourceDependencyRange = (
   return { ...dependencyInfo, version: declared };
 };
 
+function toolIdForEntry(relativeEntryFile: string): string {
+  const digest = createHash('sha256').update(relativeEntryFile).digest('hex');
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
+}
+
 export abstract class Bundler extends MastraBundler {
   protected analyzeOutputDir = '.build';
   protected outputDir = 'output';
@@ -386,6 +390,10 @@ export abstract class Bundler extends MastraBundler {
 
   protected pnpmNodeLinker?: 'hoisted';
 
+  protected getAdditionalEntries(): Record<string, string> {
+    return {};
+  }
+
   protected async installDependencies(
     outputDirectory: string,
     rootDir = process.cwd(),
@@ -393,47 +401,15 @@ export abstract class Bundler extends MastraBundler {
   ) {
     const deps = new DepsService(rootDir);
     deps.__setLogger(this.logger);
-
-    await deps.install({
+    const installOptions = {
       dir: join(outputDirectory, this.outputDir),
       pnpmOverrides,
       pnpmNodeLinker: this.pnpmNodeLinker,
-    });
-  }
+    };
 
-  /**
-   * Generate a package-lock.json for the output directory so that deploy targets
-   * can use `npm ci` instead of `npm install`, skipping version resolution entirely.
-   * This is a lockfile-only operation — no packages are downloaded.
-   *
-   * Temporarily moves node_modules out of the way because pnpm's symlink-based
-   * layout confuses npm's arborist, then restores it afterwards so that
-   * `mastra start` (or wrangler) can still resolve dependencies at runtime.
-   */
-  private async generateNpmLockfile(outputDir: string): Promise<void> {
-    const nodeModules = join(outputDir, 'node_modules');
-    const nodeModulesTmp = join(outputDir, 'node_modules.__tmp');
-    let movedNodeModules = false;
-    try {
-      // Move node_modules aside — pnpm's symlink layout confuses npm's arborist
-      if (await fsExtra.pathExists(nodeModules)) {
-        await fsExtra.move(nodeModules, nodeModulesTmp, { overwrite: true });
-        movedNodeModules = true;
-      }
-      execSync('npm install --package-lock-only --force', {
-        cwd: outputDir,
-        stdio: 'pipe',
-        timeout: 60_000,
-      });
-    } catch {
-      this.logger.warn('Failed to generate package-lock.json — deploy will fall back to npm install');
-    } finally {
-      // Restore node_modules so runtime resolution works
-      if (movedNodeModules) {
-        await rm(nodeModules, { recursive: true, force: true });
-        await fsExtra.move(nodeModulesTmp, nodeModules, { overwrite: true });
-      }
-    }
+    this.logger.info('Updating dependency lockfile and installing dependencies');
+    await deps.install(installOptions);
+    this.logger.info('Done updating dependency lockfile and installing dependencies');
   }
 
   protected async copyPublic(mastraDir: string, outputDirectory: string) {
@@ -494,11 +470,11 @@ export abstract class Bundler extends MastraBundler {
     mastraEntryFile: string,
     analyzedBundleInfo: Awaited<ReturnType<typeof analyzeBundle>>,
     toolsPaths: (string | string[])[],
-    { enableSourcemap, enableMinify, enableEsmShim, externals, entries }: BundlerOptions,
+    { enableSourcemap, enableMinify, enableEsmShim, externals }: BundlerOptions,
+    additionalEntries: Record<string, string>,
+    projectRoot: string,
   ) {
     const { workspaceRoot } = await getWorkspaceInformation({ mastraEntryFile });
-    const closestPkgJson = pkg.up({ cwd: dirname(mastraEntryFile) });
-    const projectRoot = closestPkgJson ? dirname(closestPkgJson) : process.cwd();
 
     const inputOptions: InputOptions = await getInputOptions(
       mastraEntryFile,
@@ -516,24 +492,29 @@ export abstract class Bundler extends MastraBundler {
         externalsPreset: externals === true,
       },
     );
-    const isVirtual = serverFile.includes('\n') || !existsSync(serverFile);
-    const toolsInputOptions = await this.listToolsInputOptions(toolsPaths);
+    const toolsInputOptions = await this.listToolsInputOptions(toolsPaths, projectRoot);
+    const entryInputs: Record<string, string> = {};
+    const virtualEntries: Record<string, string> = {};
+    const entries = { index: serverFile, ...additionalEntries };
 
-    // User-declared extra entries (`bundler.entries`) are emitted beside the server
-    // bundle as their own `<name>.mjs`. They share this input map so they also share
-    // the `#mastra` chunk and the analyzed dependency graph.
-    const extraEntries = entries ?? {};
-
-    if (isVirtual) {
-      inputOptions.input = { index: '#entry', ...extraEntries, ...toolsInputOptions };
-
-      if (Array.isArray(inputOptions.plugins)) {
-        inputOptions.plugins.unshift(virtual({ '#entry': serverFile }));
+    for (const [name, entry] of Object.entries(entries)) {
+      if (entry.includes('\n') || !existsSync(entry)) {
+        const virtualId = name === 'index' ? '#entry' : `#entry-${name}`;
+        entryInputs[name] = virtualId;
+        virtualEntries[virtualId] = entry;
       } else {
-        inputOptions.plugins = [virtual({ '#entry': serverFile })];
+        entryInputs[name] = entry;
       }
-    } else {
-      inputOptions.input = { index: serverFile, ...extraEntries, ...toolsInputOptions };
+    }
+
+    inputOptions.input = { ...entryInputs, ...toolsInputOptions };
+
+    if (Object.keys(virtualEntries).length > 0) {
+      if (Array.isArray(inputOptions.plugins)) {
+        inputOptions.plugins.unshift(virtual(virtualEntries));
+      } else {
+        inputOptions.plugins = [virtual(virtualEntries)];
+      }
     }
 
     return inputOptions;
@@ -562,8 +543,8 @@ export abstract class Bundler extends MastraBundler {
     return [...toolsPaths, defaultPaths];
   }
 
-  async listToolsInputOptions(toolsPaths: (string | string[])[]) {
-    const inputs: Record<string, string> = {};
+  async listToolsInputOptions(toolsPaths: (string | string[])[], projectRoot: string = process.cwd()) {
+    const entries = new Map<string, string>();
 
     for (const toolPath of toolsPaths) {
       const expandedPaths = await glob(toolPath, {
@@ -586,17 +567,20 @@ export abstract class Bundler extends MastraBundler {
             continue;
           }
 
-          const uniqueToolID = crypto.randomUUID();
-          // Normalize Windows paths to forward slashes for consistent handling
           const normalizedEntryFile = entryFile.replaceAll('\\', '/');
-          inputs[`tools/${uniqueToolID}`] = normalizedEntryFile;
+          const relativeEntryFile = relative(projectRoot, entryFile).replaceAll('\\', '/');
+          entries.set(relativeEntryFile, normalizedEntryFile);
         } else {
           this.logger.warn('Tool path does not exist, skipping', { path });
         }
       }
     }
 
-    return inputs;
+    return Object.fromEntries(
+      [...entries.entries()]
+        .sort(([first], [second]) => (first < second ? -1 : first > second ? 1 : 0))
+        .map(([relativeEntryFile, entryFile]) => [`tools/${toolIdForEntry(relativeEntryFile)}`, entryFile]),
+    );
   }
 
   protected async _bundle(
@@ -615,35 +599,28 @@ export abstract class Bundler extends MastraBundler {
     bundleLocation: string = join(outputDirectory, this.outputDir),
   ): Promise<void> {
     const analyzeDir = join(outputDirectory, this.analyzeOutputDir);
+    const additionalEntries = this.getAdditionalEntries();
+    const closestPkgJson = pkg.up({ cwd: dirname(mastraEntryFile) });
+    const entryProjectRoot = closestPkgJson ? dirname(closestPkgJson) : projectRoot;
 
     const bundlerOptions = await this.getUserBundlerOptions(mastraEntryFile, outputDirectory);
-    // Throws a USER-category MastraError on bad config, deliberately outside the try
-    // blocks below so it surfaces as-is instead of as an analyze/bundle stage failure.
-    const extraEntries = resolveExtraEntries(bundlerOptions.entries, mastraEntryFile);
     const internalBundlerOptions: BundlerOptions = {
       enableSourcemap: !!bundlerOptions.sourcemap,
       enableMinify: !!bundlerOptions.minify,
       externals: bundlerOptions.externals ?? [],
       enableEsmShim,
       dynamicPackages: bundlerOptions.dynamicPackages,
-      entries: extraEntries,
     };
-
-    if (Object.keys(extraEntries).length > 0) {
-      this.logger.info('Found additional entries', { entries: Object.keys(extraEntries) });
-    }
 
     let analyzedBundleInfo;
     try {
-      const resolvedToolsPaths = await this.listToolsInputOptions(toolsPaths);
+      const resolvedToolsPaths = await this.listToolsInputOptions(toolsPaths, entryProjectRoot);
       analyzedBundleInfo = await analyzeBundle(
-        // Extra entries are analyzed too — otherwise their externals never reach the
-        // generated package.json and the emitted bundle cannot resolve them at runtime.
-        [serverFile, ...Object.values(extraEntries), ...Object.values(resolvedToolsPaths)],
+        [serverFile, ...Object.values(additionalEntries), ...Object.values(resolvedToolsPaths)],
         mastraEntryFile,
         {
           outputDir: analyzeDir,
-          projectRoot,
+          projectRoot: entryProjectRoot,
           platform: this.platform,
           bundlerOptions: internalBundlerOptions,
         },
@@ -669,7 +646,7 @@ export abstract class Bundler extends MastraBundler {
 
     const { workspaceRoot } = await getWorkspaceInformation({ dir: projectRoot, mastraEntryFile });
     const sourceDependencyConstraints = await getSourceDependencyConstraints({
-      projectRoot,
+      projectRoot: entryProjectRoot,
       mastraEntryFile,
       workspaceRoot,
     });
@@ -690,7 +667,7 @@ export abstract class Bundler extends MastraBundler {
       }
     }
 
-    const transitiveWorkspaceDependencies = collectTransitiveWorkspaceDependencies({
+    const transitiveWorkspaceDependencies = await collectTransitiveWorkspaceDependencies({
       workspaceMap: analyzedBundleInfo.workspaceMap,
       initialDependencies: initialWorkspaceDependencies,
       logger: this.logger,
@@ -726,13 +703,25 @@ export abstract class Bundler extends MastraBundler {
         analyzedBundleInfo,
         toolsPaths,
         internalBundlerOptions,
+        additionalEntries,
+        entryProjectRoot,
       );
+
+      const unresolvedWorkspaceImports: Array<{ source: string }> = [];
 
       const bundler = await this.createBundler(
         {
           ...inputOptions,
           logLevel: inputOptions.logLevel === 'silent' ? 'warn' : inputOptions.logLevel,
           onwarn: warning => {
+            const unresolvedWorkspaceDep = getUnresolvedWorkspaceImport(
+              warning as { code: string; source?: string; id?: string },
+              analyzedBundleInfo.workspaceMap,
+            );
+            if (unresolvedWorkspaceDep) {
+              unresolvedWorkspaceImports.push({ source: unresolvedWorkspaceDep });
+            }
+
             if (warning.code === 'CIRCULAR_DEPENDENCY') {
               if (warning.ids?.[0]?.includes('node_modules')) {
                 return;
@@ -754,6 +743,16 @@ export abstract class Bundler extends MastraBundler {
       );
 
       await bundler.write();
+
+      if (unresolvedWorkspaceImports.length > 0) {
+        const importList = unresolvedWorkspaceImports.map(i => `  - ${i.source}`).join('\n');
+        throw new MastraError({
+          id: 'DEPLOYER_BUNDLER_UNRESOLVED_WORKSPACE_IMPORT',
+          text: `Workspace imports could not be resolved during bundling:\n${importList}\n\nThis means the analyzer did not capture these workspace subpath imports during the analysis phase. Try adding the package as a direct dependency of the app, or check the workspace configuration.`,
+          domain: ErrorDomain.DEPLOYER,
+          category: ErrorCategory.SYSTEM,
+        });
+      }
       const toolImports: string[] = [];
       const toolsExports: string[] = [];
       Array.from(Object.keys(inputOptions.input || {}))
@@ -787,21 +786,16 @@ export const tools = [${toolsExports.join(', ')}]`,
 
       this.logger.info('Done copying .npmrc file');
 
-      this.logger.info('Installing dependencies');
-      await this.installDependencies(outputDirectory, projectRoot, transitiveWorkspaceDependencies.resolutions);
-      this.logger.info('Done installing dependencies');
-
-      if (Object.keys(transitiveWorkspaceDependencies.resolutions).length === 0) {
-        this.logger.info('Generating package-lock.json for deploy');
-        await this.generateNpmLockfile(join(outputDirectory, this.outputDir));
-        this.logger.info('Done generating package-lock.json');
+      if (shouldSkipInstall()) {
+        this.logger.info('Skipping dependency installation (MASTRA_BUILD_SKIP_INSTALL set)');
       } else {
-        this.logger.warn(
-          'Skipping package-lock.json generation because the output contains packed workspace dependencies',
-        );
+        await this.installDependencies(outputDirectory, projectRoot, transitiveWorkspaceDependencies.resolutions);
       }
     } catch (error) {
-      if (error instanceof MastraError && error.id === 'DEPLOYER_BUNDLER_FACTORY_UI_MISSING') {
+      if (
+        error instanceof MastraError &&
+        (error.id === 'DEPLOYER_BUNDLER_FACTORY_UI_MISSING' || error.id === 'DEPLOYER_PNPM_IGNORED_BUILDS')
+      ) {
         throw error;
       }
 
@@ -818,8 +812,8 @@ export const tools = [${toolsExports.join(', ')}]`,
     }
   }
 
-  async lint(_entryFile: string, _outputDirectory: string, toolsPaths: (string | string[])[]): Promise<void> {
-    const toolsInputOptions = await this.listToolsInputOptions(toolsPaths);
+  async lint(_entryFile: string, outputDirectory: string, toolsPaths: (string | string[])[]): Promise<void> {
+    const toolsInputOptions = await this.listToolsInputOptions(toolsPaths, dirname(outputDirectory));
     const toolsLength = Object.keys(toolsInputOptions).length;
     if (toolsLength > 0) {
       this.logger.info('Found tools', { count: toolsLength });

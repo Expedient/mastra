@@ -253,7 +253,9 @@
                               "model": "mock-model-id",
                               "provider": "mock-provider",
                               "streaming": true,
-                              "parameters": {},
+                              "parameters": {
+                                "maxRetries": 0
+                              },
                               "availableTools": [],
                               "toolChoice": "auto",
                               "usage": {
@@ -268,7 +270,8 @@
                               },
                               "finishReason": "stop",
                               "warnings": [],
-                              "completionStartTime": "<date>"
+                              "completionStartTime": "<date>",
+                              "responseModel": "mock-model-id"
                             },
                             "metadata": {
                               "runId": "<runId-2>",
@@ -447,7 +450,9 @@
                       "model": "mock-model-id",
                       "provider": "mock-provider",
                       "streaming": true,
-                      "parameters": {},
+                      "parameters": {
+                        "maxRetries": 0
+                      },
                       "availableTools": [],
                       "toolChoice": "auto",
                       "usage": {
@@ -461,7 +466,8 @@
                         }
                       },
                       "finishReason": "stop",
-                      "completionStartTime": "<date>"
+                      "completionStartTime": "<date>",
+                      "responseModel": "mock-model-id"
                     },
                     "metadata": {
                       "runId": "<runId-1>",
@@ -717,7 +723,9 @@
                               "model": "mock-model-id",
                               "provider": "mock-provider",
                               "streaming": true,
-                              "parameters": {},
+                              "parameters": {
+                                "maxRetries": 0
+                              },
                               "availableTools": [],
                               "toolChoice": "auto",
                               "usage": {
@@ -732,7 +740,8 @@
                               },
                               "finishReason": "stop",
                               "warnings": [],
-                              "completionStartTime": "<date>"
+                              "completionStartTime": "<date>",
+                              "responseModel": "mock-model-id"
                             },
                             "metadata": {
                               "runId": "<runId-3>",

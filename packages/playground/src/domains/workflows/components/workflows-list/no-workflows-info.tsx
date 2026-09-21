@@ -16,12 +16,11 @@ export const NoWorkflowsInfo = () => (
       actionSlot={
         <Button
           variant="ghost"
-          as="a"
-          href="https://mastra.ai/docs/workflows/overview"
-          target="_blank"
-          rel="noopener noreferrer"
+          render={<a href="https://mastra.ai/docs/workflows/overview" target="_blank" rel="noopener noreferrer" />}
+
+          icon={<ExternalLinkIcon />}
         >
-          Workflows Documentation <ExternalLinkIcon />
+          Workflows Documentation
         </Button>
       }
     />

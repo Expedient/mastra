@@ -10,6 +10,19 @@ const mockAuthStorageInstance = vi.hoisted(() => ({
   isLoggedIn: vi.fn().mockReturnValue(false),
 }));
 
+/**
+ * Providers are handed a request-scoped wrapper over the global store (pack
+ * subscription routing picks the account per request), so instance identity no
+ * longer holds. Assert the wrapper delegates reads to the mocked global store.
+ */
+function scopedAuthStorage() {
+  return expect.objectContaining({
+    reload: expect.any(Function),
+    get: expect.any(Function),
+    getStoredApiKey: expect.any(Function),
+  });
+}
+
 vi.mock('../../auth/storage.js', () => {
   return {
     AuthStorage: class MockAuthStorage {
@@ -196,6 +209,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MODEL_TOKENS } from '../../../../../docs/src/plugins/remark-model-tokens/models.js';
 import { opencodeClaudeMaxProvider, buildAnthropicOAuthFetch } from '../../providers/claude-max.js';
 import { openaiCodexProvider, buildOpenAICodexOAuthFetch } from '../../providers/openai-codex.js';
+import { setCredentialStoreProvider } from '../credential-resolver.js';
 import {
   createMastraCodeGateway,
   resolveModel,
@@ -234,11 +248,14 @@ describe('resolveModel', () => {
     delete process.env.OPENAI_BASE_URL;
     delete process.env.MOONSHOT_API_KEY;
     delete process.env.MOONSHOT_AI_API_KEY;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
     delete process.env.MASTRA_GATEWAY_API_KEY;
     delete process.env.MASTRA_GATEWAY_URL;
   });
 
   afterEach(() => {
+    setCredentialStoreProvider(undefined);
     process.env = { ...originalEnv };
   });
 
@@ -299,19 +316,21 @@ describe('resolveModel', () => {
 
   describe('anthropic/* models', () => {
     it('prefers Claude Max OAuth when stored OAuth credential exists', () => {
-      mockAuthStorageInstance.get.mockReturnValue({
+      const stored = {
         type: 'oauth',
         access: 'oauth-access-token',
         refresh: 'oauth-refresh-token',
         expires: Date.now() + 60_000,
-      });
+      };
+      mockAuthStorageInstance.get.mockReturnValue(stored);
 
       resolveModel('anthropic/claude-sonnet-4-20250514');
 
-      expect(opencodeClaudeMaxProvider).toHaveBeenCalledWith('claude-sonnet-4-20250514', {
-        headers: undefined,
-        authStorage: mockAuthStorageInstance,
-      });
+      const [modelId, args] = opencodeClaudeMaxProvider.mock.calls.at(-1)!;
+      expect(modelId).toBe('claude-sonnet-4-20250514');
+      expect(args).toMatchObject({ headers: undefined, authStorage: scopedAuthStorage() });
+      // The wrapper must resolve the account's credential from the global store.
+      expect((args as { authStorage: { get(id: string): unknown } }).authStorage.get('anthropic')).toEqual(stored);
     });
 
     it('parses provider/model ids and delegates directly through the MastraCode gateway', () => {
@@ -387,7 +406,7 @@ describe('resolveModel', () => {
 
       expect(opencodeClaudeMaxProvider).toHaveBeenCalledWith('claude-sonnet-4-20250514', {
         headers: undefined,
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
     });
 
@@ -408,7 +427,7 @@ describe('resolveModel', () => {
           'x-thread-id': 'thread-123',
           'x-resource-id': 'resource-456',
         },
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
     });
 
@@ -424,7 +443,7 @@ describe('resolveModel', () => {
 
       expect(opencodeClaudeMaxProvider).toHaveBeenCalledWith('claude-opus-4-6', {
         headers: undefined,
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
     });
 
@@ -475,6 +494,22 @@ describe('resolveModel', () => {
       expect(result.__provider).toBe('model-router');
     });
 
+    it('reports a missing signed-in Factory credential instead of an environment variable', () => {
+      setCredentialStoreProvider(() => ({
+        allowEnvironmentFallback: false,
+        reload() {},
+        get: () => undefined,
+        getStoredApiKey: () => undefined,
+        getApiKey: async () => undefined,
+      }));
+      const requestContext = makeRequestContext();
+      requestContext.set('user', { workosId: 'user-1', organizationId: 'org-1' });
+
+      expect(() => resolveModel('openai/gpt-4o', { requestContext })).toThrow(
+        'No usable openai credential is configured for this signed-in Factory account.',
+      );
+    });
+
     it('passes controller headers to the OpenAI OAuth provider', () => {
       mockAuthStorageInstance.get.mockReturnValue({
         type: 'oauth',
@@ -493,7 +528,7 @@ describe('resolveModel', () => {
           'x-thread-id': 'thread-123',
           'x-resource-id': 'resource-456',
         },
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
     });
 
@@ -522,7 +557,7 @@ describe('resolveModel', () => {
       expect(openaiCodexProvider).toHaveBeenCalledWith('gpt-5.2-codex', {
         thinkingLevel: 'high',
         headers: undefined,
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
     });
   });
@@ -739,6 +774,33 @@ describe('resolveModel', () => {
       );
     });
 
+    it('does not pass the Mastra Gateway key to an unprefixed DeepSeek model', () => {
+      process.env.DEEPSEEK_API_KEY = 'sk-deepseek-env-fixture';
+      mockAuthStorageInstance.get.mockReturnValue(undefined);
+
+      const result = resolveModel('deepseek/deepseek-v4-flash') as Record<string, unknown>;
+
+      expect(result.__provider).toBe('model-router');
+      expect(result.modelId).toBe('deepseek/deepseek-v4-flash');
+      expect(result.apiKey).toBe('');
+    });
+
+    it('prefers a stored DeepSeek key over the stored Mastra Gateway key', () => {
+      process.env.DEEPSEEK_API_KEY = 'sk-deepseek-env-fixture';
+      mockAuthStorageInstance.get.mockReturnValue(undefined);
+      mockAuthStorageInstance.getStoredApiKey.mockImplementation((providerId: string) => {
+        if (providerId === 'deepseek') return 'sk-deepseek-stored-fixture';
+        if (providerId === 'mastra-gateway') return 'msk_gateway_key_123';
+        return undefined;
+      });
+
+      const result = resolveModel('deepseek/deepseek-v4-flash') as Record<string, unknown>;
+
+      expect(result.__provider).toBe('model-router');
+      expect(result.modelId).toBe('deepseek/deepseek-v4-flash');
+      expect(result.apiKey).toBe('sk-deepseek-stored-fixture');
+    });
+
     it('routes explicit mastra-prefixed anthropic model through gateway', () => {
       mockAuthStorageInstance.get.mockReturnValue(undefined);
       const result = resolveModel('mastra/anthropic/claude-sonnet-4') as Record<string, unknown>;
@@ -831,7 +893,7 @@ describe('resolveModel', () => {
         'Bearer msk_gateway_key_123',
       );
       expect(buildOpenAICodexOAuthFetch).toHaveBeenCalledWith({
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
         rewriteUrl: false,
       });
       expect(wrapLanguageModel).toHaveBeenCalled();
@@ -952,7 +1014,7 @@ describe('resolveModel', () => {
       expect(MastraGateway).toHaveBeenCalledWith({ baseUrl: 'https://gateway-api.mastra.ai' });
       expect(opencodeClaudeMaxProvider).toHaveBeenCalledWith('claude-sonnet-4', {
         headers: undefined,
-        authStorage: mockAuthStorageInstance,
+        authStorage: scopedAuthStorage(),
       });
       delete process.env['MASTRA_GATEWAY_API_KEY'];
     });
@@ -1114,6 +1176,16 @@ describe('resolveRequestThinkingLevel', () => {
     const level = resolveRequestThinkingLevel({ state: {}, session: { modeId: 'plan' } } as any);
 
     expect(level).toBe('medium');
+  });
+
+  it('treats a null session value as a cleared override', () => {
+    mockLoadSettings.mockImplementation(() =>
+      settingsWithThinking({ modeThinkingDefaults: { build: 'high' }, thinkingLevel: 'medium' }),
+    );
+
+    const level = resolveRequestThinkingLevel({ state: { thinkingLevel: null }, session: { modeId: 'build' } });
+
+    expect(level).toBe('high');
   });
 
   it('resolves defaults when no controller context exists at all', () => {

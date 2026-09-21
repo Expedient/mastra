@@ -1,5 +1,5 @@
 import type { ScheduleTriggerResponse } from '@mastra/client-js';
-import { DataList, DataListSkeleton } from '@mastra/playground-ui/components/DataList';
+import { DataList, DataListSkeleton, useDataListKeyboard } from '@mastra/playground-ui/components/DataList';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@mastra/playground-ui/components/Tooltip';
 import { Txt } from '@mastra/playground-ui/components/Txt';
 import { AlertTriangleIcon } from 'lucide-react';
@@ -51,20 +51,25 @@ export function ScheduleTriggersList({
 }: ScheduleTriggersListProps) {
   const { Link, paths } = useLinkComponent();
 
+  const isTriggerLinked = (t: ScheduleTriggerResponse) => Boolean(workflowId && t.runId && t.outcome !== 'failed');
+  const interactiveCount = triggers.filter(isTriggerLinked).length;
+  const { containerRef, getRowProps } = useDataListKeyboard({ count: interactiveCount });
+  let interactiveIndex = -1;
+
   if (isLoading) {
     return <DataListSkeleton columns={COLUMNS} />;
   }
 
   if (triggers.length === 0) {
     return (
-      <Txt variant="ui-md" className="text-neutral4 p-4">
+      <Txt variant="ui-md" className="text-muted-foreground p-4">
         No trigger history yet.
       </Txt>
     );
   }
 
   return (
-    <DataList columns={COLUMNS} className="min-w-0">
+    <DataList columns={COLUMNS} className="min-w-0" scrollRef={containerRef}>
       <DataList.Top>
         <DataList.TopCell>Run</DataList.TopCell>
         <DataList.TopCell>Status</DataList.TopCell>
@@ -83,13 +88,14 @@ export function ScheduleTriggersList({
         const showDriftWarning = !isPublishFailure && absDrift > DRIFT_WARN_MIN_MS && absDrift <= DRIFT_WARN_MAX_MS;
 
         const rowKey = `${t.scheduleId}-${t.runId}-${t.actualFireAt}`;
-        const isLinked = Boolean(workflowId && t.runId && !isPublishFailure);
+        const isLinked = isTriggerLinked(t);
+        if (isLinked) interactiveIndex += 1;
         const runIdLabel = (
           <span
             className={
               isLinked
                 ? 'text-accent1 text-ui-sm font-mono whitespace-nowrap'
-                : 'text-neutral3 text-ui-sm font-mono whitespace-nowrap'
+                : 'text-muted-foreground text-ui-sm font-mono whitespace-nowrap'
             }
           >
             {t.runId}
@@ -98,9 +104,9 @@ export function ScheduleTriggersList({
 
         const cells = (
           <>
-            <DataList.Cell height="compact">{runIdLabel}</DataList.Cell>
+            <DataList.Cell>{runIdLabel}</DataList.Cell>
 
-            <DataList.Cell height="compact">
+            <DataList.Cell>
               <span className="inline-flex items-center gap-2">
                 {isPublishFailure ? (
                   <span className="text-ui-sm text-accent2 inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -110,7 +116,7 @@ export function ScheduleTriggersList({
                 ) : t.run ? (
                   <WorkflowRunStatusInline status={t.run.status} />
                 ) : (
-                  <span className="text-ui-sm text-neutral3 inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="text-ui-sm text-muted-foreground inline-flex items-center gap-1.5 whitespace-nowrap">
                     pending
                   </span>
                 )}
@@ -127,7 +133,7 @@ export function ScheduleTriggersList({
               </span>
             </DataList.Cell>
 
-            <DataList.Cell height="compact">
+            <DataList.Cell>
               <span className="inline-flex items-center gap-2 whitespace-nowrap">
                 <span title={startedTooltip}>{formatRelativeTime(t.actualFireAt)}</span>
                 {showDriftWarning ? (
@@ -143,15 +149,24 @@ export function ScheduleTriggersList({
               </span>
             </DataList.Cell>
 
-            <DataList.Cell height="compact">
-              {t.run ? <span>{formatDuration(t.run.durationMs)}</span> : <span className="text-neutral4">—</span>}
+            <DataList.Cell>
+              {t.run ? (
+                <span>{formatDuration(t.run.durationMs)}</span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </DataList.Cell>
-            <DataList.Cell height="compact"> </DataList.Cell>
+            <DataList.Cell> </DataList.Cell>
           </>
         );
 
         return isLinked ? (
-          <DataList.RowLink key={rowKey} to={paths.workflowRunLink(workflowId!, t.runId!)} LinkComponent={Link}>
+          <DataList.RowLink
+            key={rowKey}
+            to={paths.workflowRunLink(workflowId!, t.runId!)}
+            LinkComponent={Link}
+            {...getRowProps(interactiveIndex)}
+          >
             {cells}
           </DataList.RowLink>
         ) : (

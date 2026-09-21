@@ -43,6 +43,8 @@ export const MemorySearch = ({
   const prevThreadIdRef = useRef<string | undefined>(currentThreadId);
   const lastSearchTimeRef = useRef<number>(0);
   const pendingSearchRef = useRef<string | null>(null);
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   // Debounced search
   const handleSearch = useCallback(
@@ -158,9 +160,10 @@ export const MemorySearch = ({
     prevThreadIdRef.current = currentThreadId;
   }, [currentThreadId, query, handleSearch]);
 
-  // Sync chat input value with internal state when provided
+  // Sync chat input value with internal state when provided.
+  // Keyed on chatInputValue only: re-running on local `query` edits would overwrite the user's typing.
   useEffect(() => {
-    if (chatInputValue !== undefined && chatInputValue !== query) {
+    if (chatInputValue !== undefined && chatInputValue !== queryRef.current) {
       setQuery(chatInputValue);
 
       if (searchTimeoutRef.current) {
@@ -202,7 +205,7 @@ export const MemorySearch = ({
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [chatInputValue]);
+  }, [chatInputValue, handleSearch]);
 
   const handleResultClick = (messageId: string, threadId?: string) => {
     onResultClick?.(messageId, threadId);
@@ -226,7 +229,7 @@ export const MemorySearch = ({
   return (
     <div className={cn('flex flex-col h-full', className)} ref={dropdownRef}>
       <div className="relative shrink-0">
-        <Search className="text-neutral3 absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform" />
+        <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform" />
         <Input
           type="text"
           value={query}
@@ -253,13 +256,13 @@ export const MemorySearch = ({
             </div>
           ) : isSearching && results.length === 0 ? (
             <div className="p-4 text-center">
-              <Txt variant="ui-sm" className="text-neutral3">
+              <Txt variant="ui-sm" className="text-muted-foreground">
                 Searching...
               </Txt>
             </div>
           ) : results.length === 0 ? (
             <div className="p-4 text-center">
-              <Txt variant="ui-sm" className="text-neutral3">
+              <Txt variant="ui-sm" className="text-muted-foreground">
                 No results found for "{query}"
               </Txt>
             </div>
@@ -277,11 +280,11 @@ export const MemorySearch = ({
                   <div className="flex flex-col gap-2">
                     {/* Context before */}
                     {result.context?.before && result.context.before.length > 0 && (
-                      <div className="space-y-1 text-xs opacity-50">
+                      <div className="text-ui-sm space-y-1 opacity-50">
                         {result.context.before.map((msg, idx) => (
                           <div key={idx} className="flex items-start gap-2">
                             <span className="font-medium">{msg.role}:</span>
-                            <span className="text-neutral3">{truncateContent(msg.content, 50)}</span>
+                            <span className="text-muted-foreground">{truncateContent(msg.content, 50)}</span>
                           </div>
                         ))}
                       </div>
@@ -293,7 +296,7 @@ export const MemorySearch = ({
                         <div className="mb-1 flex items-center gap-2">
                           <span
                             className={cn(
-                              'text-xs font-medium px-2 py-0.5 rounded',
+                              'text-ui-sm font-medium px-2 py-0.5 rounded',
                               result.role === 'user'
                                 ? 'bg-blue-500/20 text-blue-400'
                                 : 'bg-green-500/20 text-green-400',
@@ -301,7 +304,7 @@ export const MemorySearch = ({
                           >
                             {result.role}
                           </span>
-                          <Txt variant="ui-xs" className="text-neutral3">
+                          <Txt variant="ui-xs" className="text-muted-foreground">
                             {formatRelativeTime(new Date(result.createdAt))}
                           </Txt>
                           {result.threadTitle && (
@@ -310,7 +313,9 @@ export const MemorySearch = ({
                                 variant="ui-xs"
                                 className={cn(
                                   'truncate max-w-[150px]',
-                                  result.threadId !== currentThreadId ? 'text-blue-400 font-medium' : 'text-neutral3',
+                                  result.threadId !== currentThreadId
+                                    ? 'text-blue-400 font-medium'
+                                    : 'text-muted-foreground',
                                 )}
                                 title={result.threadTitle}
                               >
@@ -322,7 +327,7 @@ export const MemorySearch = ({
                             </div>
                           )}
                         </div>
-                        <Txt variant="ui-sm" className="text-neutral5 wrap-break-word">
+                        <Txt variant="ui-sm" className="text-foreground wrap-break-word">
                           {truncateContent(result.content)}
                         </Txt>
                       </div>
@@ -330,11 +335,11 @@ export const MemorySearch = ({
 
                     {/* Context after */}
                     {result.context?.after && result.context.after.length > 0 && (
-                      <div className="space-y-1 text-xs opacity-50">
+                      <div className="text-ui-sm space-y-1 opacity-50">
                         {result.context.after.map((msg, idx) => (
                           <div key={idx} className="flex items-start gap-2">
                             <span className="font-medium">{msg.role}:</span>
-                            <span className="text-neutral3">{truncateContent(msg.content, 50)}</span>
+                            <span className="text-muted-foreground">{truncateContent(msg.content, 50)}</span>
                           </div>
                         ))}
                       </div>

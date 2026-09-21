@@ -11,12 +11,11 @@ export const NoScorersInfo = () => (
       actionSlot={
         <Button
           variant="ghost"
-          as="a"
-          href="https://mastra.ai/docs/evals/overview"
-          target="_blank"
-          rel="noopener noreferrer"
+          render={<a href="https://mastra.ai/docs/evals/overview" target="_blank" rel="noopener noreferrer" />}
+
+          icon={<ExternalLinkIcon />}
         >
-          Scorers Documentation <ExternalLinkIcon />
+          Scorers Documentation
         </Button>
       }
     />

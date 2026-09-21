@@ -41,10 +41,10 @@ export const ToolGrid = ({
     : undefined;
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-6 px-6 py-6">
+    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 px-4 py-4">
       <div className="flex shrink-0 items-center justify-between gap-4">
         <div data-testid="tools-card-picker-search" className="bg-surface3 max-w-[30ch] flex-1 rounded-full">
-          <InputGroup variant="outline" size="lg">
+          <InputGroup variant="outline" size="md">
             <InputGroupAddon align="inline-start">
               <SearchIcon />
             </InputGroupAddon>
@@ -60,7 +60,7 @@ export const ToolGrid = ({
         <label
           data-testid="tools-only-selected-filter"
           className={cn(
-            'inline-flex items-center gap-2 text-ui-xs text-neutral3 select-none cursor-pointer',
+            'inline-flex items-center gap-2 text-ui-xs text-muted-foreground select-none cursor-pointer',
             !editable && 'cursor-not-allowed opacity-60',
           )}
         >
@@ -79,7 +79,7 @@ export const ToolGrid = ({
       {tools.length === 0 ? (
         <ToolListEmptyState details={emptyStateDetails} />
       ) : (
-        <div className="grid min-h-0 grid-cols-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:gap-6 2xl:grid-cols-3">
+        <div className="grid min-h-0 grid-cols-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:gap-4 2xl:grid-cols-3">
           {tools.map(item => (
             <ToolCard key={`${item.type}__${item.id}`} item={item} editable={editable} onToggle={onToggle} />
           ))}
@@ -95,8 +95,8 @@ interface ToolListEmptyStateProps {
 
 export const ToolListEmptyState = ({ details }: ToolListEmptyStateProps) => {
   return (
-    <div className="flex min-h-0 items-center justify-center px-3 py-6">
-      <Txt variant="ui-md" className="text-neutral3">
+    <div className="flex min-h-0 items-center justify-center px-3 py-4">
+      <Txt variant="ui-md" className="text-muted-foreground">
         {details}
       </Txt>
     </div>

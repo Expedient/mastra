@@ -12,10 +12,9 @@ import {
 import { Label } from '@mastra/playground-ui/components/Label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@mastra/playground-ui/components/Select';
 import { Spinner } from '@mastra/playground-ui/components/Spinner';
-import { Icon } from '@mastra/playground-ui/icons/Icon';
 import { toast } from '@mastra/playground-ui/utils/toast';
 import { useMastraClient } from '@mastra/react';
-import { DatabaseIcon, Save } from 'lucide-react';
+import { DatabaseIcon, Save, X } from 'lucide-react';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 
 import { useDatasetSaveContext } from '../context/dataset-save-context';
@@ -114,7 +113,7 @@ function DatasetSaveDialog({
               </SelectTrigger>
               <SelectContent>
                 {datasets.length === 0 ? (
-                  <div className="text-neutral4 px-2 py-4 text-center text-sm">No datasets available</div>
+                  <div className="text-muted-foreground text-ui-md px-2 py-4 text-center">No datasets available</div>
                 ) : (
                   datasets.map(dataset => (
                     <SelectItem key={dataset.id} value={dataset.id}>
@@ -146,8 +145,8 @@ function DatasetSaveDialog({
             />
           </div>
         </DialogBody>
-        <DialogFooter className="px-6">
-          <Button variant="default" size="sm" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="px-4">
+          <Button icon={<X />} variant="default" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
@@ -155,10 +154,8 @@ function DatasetSaveDialog({
             size="sm"
             onClick={handleSubmit}
             disabled={addItem.isPending || !selectedDatasetId || datasets.length === 0}
+            icon={<Save />}
           >
-            <Icon size="sm">
-              <Save />
-            </Icon>
             {addItem.isPending ? 'Saving...' : 'Save Item'}
           </Button>
         </DialogFooter>
@@ -198,7 +195,7 @@ function DatasetSaveActionInner({ messageText }: DatasetSaveActionProps) {
         variant="default"
         size="icon-md"
         tooltip="Save to dataset"
-        className="text-neutral3 hover:text-neutral6 bg-transparent"
+        className="text-muted-foreground hover:text-foreground bg-transparent"
         onClick={handleClick}
       >
         <DatabaseIcon className="h-4 w-4" />
@@ -268,7 +265,7 @@ function SaveFullConversationInner() {
         type="button"
         onClick={handleClick}
         disabled={isFetching}
-        className="text-neutral3 hover:text-neutral5 text-ui-xs leading-ui-xs mx-auto flex cursor-pointer items-center gap-1.5 py-3 transition-colors disabled:opacity-50"
+        className="text-muted-foreground hover:text-foreground text-ui-xs leading-ui-xs mx-auto flex cursor-pointer items-center gap-1.5 py-3 transition-colors disabled:opacity-50"
       >
         {isFetching ? <Spinner className="h-3.5 w-3.5" /> : <DatabaseIcon className="h-3.5 w-3.5" />}
         Save full conversation to dataset

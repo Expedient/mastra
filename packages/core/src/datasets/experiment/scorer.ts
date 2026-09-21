@@ -1,7 +1,13 @@
 import { ScorerRunError } from '../../evals/base';
-import type { MastraScorer } from '../../evals/base';
+import type { MastraScorer, ScorerStepName } from '../../evals/base';
+import type { NotScorableOutcome } from '../../evals/not-scorable';
 import { extractTrajectory, extractTrajectoryFromTrace } from '../../evals/types';
-import type { ScorerRunInputForAgent, ScorerRunOutputForAgent, Trajectory } from '../../evals/types';
+import type {
+  ScorerRunInputForAgent,
+  ScorerRunOutputForAgent,
+  Trajectory,
+  TrajectoryExpectation,
+} from '../../evals/types';
 import type { Mastra } from '../../mastra';
 import { validateAndSaveScore } from '../../mastra/hooks';
 import { EntityType } from '../../observability';
@@ -151,9 +157,28 @@ export interface WorkflowScorerData {
  * source for trajectory extraction, so nulling it to stop writes would silently
  * downgrade trajectory scorers to the raw-message fallback.
  */
+/**
+ * Deterministic score id for experiment score rows. Retried executions of the
+ * same (experiment, item, attempt, scorer) produce the same id, so the scores
+ * store upserts (latest wins) instead of accumulating duplicate rows.
+ */
+export function experimentScoreId(experimentId: string, itemId: string, attempt: number, scorerId: string): string {
+  return `${experimentScoreKey(experimentId, itemId, attempt)}:${scorerId}`;
+}
+
+/** Prefix shared by all scores of one (experiment, item, attempt) execution. */
+export function experimentScoreKey(experimentId: string, itemId: string, attempt: number): string {
+  return `expscore:${experimentId}:${itemId}:${attempt}`;
+}
+
 export async function runScorersForItem(
   scorers: MastraScorer<any, any, any, any>[],
-  item: { input: unknown; groundTruth?: unknown; metadata?: Record<string, unknown> },
+  item: {
+    input: unknown;
+    groundTruth?: unknown;
+    expectedTrajectory?: TrajectoryExpectation;
+    metadata?: Record<string, unknown>;
+  },
   output: unknown,
   storage: MastraCompositeStore | null,
   runId: string,
@@ -165,6 +190,7 @@ export async function runScorersForItem(
   traceId?: string,
   workflowData?: WorkflowScorerData,
   persistScores: boolean = true,
+  stableScoreKey?: string,
 ): Promise<ScorerResult[]> {
   if (scorers.length === 0) return [];
 
@@ -208,6 +234,7 @@ export async function runScorersForItem(
         try {
           // Legacy score-store emission. This path is being deprecated.
           await validateAndSaveScore(storage, {
+            ...(stableScoreKey ? { id: `${stableScoreKey}:${scorer.id}` } : {}),
             scorerId: scorer.id,
             score: result.score,
             reason: result.reason ?? undefined,
@@ -269,6 +296,7 @@ interface ScorerPromptMetadata {
 function extractScorerRunFields(scoreResult: unknown): {
   score: number | null;
   reason: string | null;
+  notScorable?: NotScorableOutcome;
   promptMetadata: ScorerPromptMetadata;
 } {
   if (typeof scoreResult !== 'object' || scoreResult === null) {
@@ -283,9 +311,20 @@ function extractScorerRunFields(scoreResult: unknown): {
     return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
   };
 
+  const notScorable = obj('notScorable');
+
   return {
     score: typeof fields.score === 'number' ? fields.score : null,
     reason: typeof fields.reason === 'string' ? fields.reason : null,
+    // `step` is always one of the scorer's own step names; see MastraScorer.
+    ...(notScorable && typeof notScorable.step === 'string'
+      ? {
+          notScorable: {
+            step: notScorable.step as ScorerStepName,
+            ...(typeof notScorable.reason === 'string' ? { reason: notScorable.reason } : {}),
+          },
+        }
+      : {}),
     promptMetadata: {
       generateScorePrompt: str('generateScorePrompt'),
       generateReasonPrompt: str('generateReasonPrompt'),
@@ -305,7 +344,12 @@ function extractScorerRunFields(scoreResult: unknown): {
  */
 async function runScorerSafe(
   scorer: MastraScorer<any, any, any, any>,
-  item: { input: unknown; groundTruth?: unknown; metadata?: Record<string, unknown> },
+  item: {
+    input: unknown;
+    groundTruth?: unknown;
+    expectedTrajectory?: TrajectoryExpectation;
+    metadata?: Record<string, unknown>;
+  },
   output: unknown,
   scorerInput?: ScorerRunInputForAgent,
   scorerOutput?: ScorerRunOutputForAgent,
@@ -336,6 +380,7 @@ async function runScorerSafe(
       input: scorerInput ?? item.input,
       output: effectiveOutput,
       groundTruth: item.groundTruth,
+      expectedTrajectory: item.expectedTrajectory,
       scoreSource: 'experiment',
       targetScope: effectiveScope,
       targetEntityType: toScorerTargetEntityType(targetType),
@@ -361,7 +406,7 @@ async function runScorerSafe(
       };
     }
 
-    const { score, reason, promptMetadata } = extractScorerRunFields(scoreResult);
+    const { score, reason, notScorable, promptMetadata } = extractScorerRunFields(scoreResult);
 
     return {
       result: {
@@ -370,6 +415,7 @@ async function runScorerSafe(
         score,
         reason,
         error: null,
+        ...(notScorable ? { notScorable } : {}),
         targetScope: effectiveScope,
       },
       promptMetadata,
@@ -438,7 +484,12 @@ export function resolveStepScorers(
  */
 export async function runStepScorersForItem(
   stepScorers: Record<string, MastraScorer<any, any, any, any>[]>,
-  item: { input: unknown; groundTruth?: unknown; metadata?: Record<string, unknown> },
+  item: {
+    input: unknown;
+    groundTruth?: unknown;
+    expectedTrajectory?: TrajectoryExpectation;
+    metadata?: Record<string, unknown>;
+  },
   workflowData: WorkflowScorerData | undefined,
   storage: MastraCompositeStore | null,
   runId: string,
@@ -494,6 +545,7 @@ export async function runStepScorersForItem(
             input: stepInput,
             output: stepOutput,
             groundTruth: item.groundTruth,
+            expectedTrajectory: item.expectedTrajectory,
             scoreSource: 'experiment',
             targetScope: 'span',
             targetEntityType: EntityType.WORKFLOW_STEP,
@@ -513,9 +565,7 @@ export async function runStepScorersForItem(
               stepId,
             };
           }
-          const fields = scoreResult as Record<string, unknown>;
-          const score = typeof fields.score === 'number' ? fields.score : null;
-          const reason = typeof fields.reason === 'string' ? fields.reason : null;
+          const { score, reason, notScorable } = extractScorerRunFields(scoreResult);
 
           // Persist score (best-effort, mirrors runScorersForItem)
           if (persistScores && storage && score !== null) {
@@ -554,6 +604,7 @@ export async function runStepScorersForItem(
             score,
             reason,
             error: null,
+            ...(notScorable ? { notScorable } : {}),
             targetScope: 'span' as const,
             stepId,
           };

@@ -40,7 +40,7 @@ export const SkillWorkspaceLayout = ({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="bg-surface1 flex min-w-0 items-center gap-2 px-3 py-2 md:px-6 md:py-3">
+      <div className="bg-surface1 flex min-w-0 items-center gap-2 px-3 py-2 md:px-4 md:py-2">
         <Button
           size="icon-sm"
           variant="ghost"
@@ -52,7 +52,7 @@ export const SkillWorkspaceLayout = ({
           <ArrowLeftIcon />
         </Button>
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="text-ui-md text-neutral6 min-w-0 truncate">{title}</div>
+          <div className="text-ui-md text-foreground min-w-0 truncate">{title}</div>
           {rightAside && <div className="shrink-0">{rightAside}</div>}
         </div>
         {primaryAction && <div className="shrink-0">{primaryAction}</div>}
@@ -66,7 +66,7 @@ export const SkillWorkspaceLayout = ({
           <div
             role="tablist"
             aria-label="Workspace view"
-            className="border-border1 bg-surface3 relative mx-auto flex h-9 w-full max-w-sm items-center rounded-full border p-0.5"
+            className="border-border1 bg-surface3 h-form-lg relative mx-auto flex w-full max-w-sm items-center rounded-full border p-0.5"
           >
             <span
               aria-hidden="true"
@@ -85,7 +85,7 @@ export const SkillWorkspaceLayout = ({
               className={cn(
                 'relative z-10 flex-1 rounded-full text-ui-md font-medium outline-none',
                 'transition-colors duration-200',
-                activeTab === 'chat' ? 'text-neutral5' : 'text-neutral3 hover:text-neutral4',
+                activeTab === 'chat' ? 'text-foreground' : 'text-muted-foreground hover:text-muted-foreground',
               )}
             >
               Chat
@@ -99,7 +99,7 @@ export const SkillWorkspaceLayout = ({
               className={cn(
                 'relative z-10 flex-1 rounded-full text-ui-md font-medium outline-none',
                 'transition-colors duration-200',
-                activeTab === 'configure' ? 'text-neutral5' : 'text-neutral3 hover:text-neutral4',
+                activeTab === 'configure' ? 'text-foreground' : 'text-muted-foreground hover:text-muted-foreground',
               )}
             >
               Configuration
@@ -126,7 +126,7 @@ export const SkillWorkspaceLayout = ({
             'md:transition-[grid-column] md:duration-300 md:ease-out',
           )}
         >
-          <div className="flex h-full min-h-0 flex-col px-4 pt-4 pb-6 md:px-10">
+          <div className="flex h-full min-h-0 flex-col px-4 pt-4 pb-4 md:px-10">
             <div className="flex min-h-0 w-full flex-1 flex-col md:mx-auto md:max-w-[80ch]">{chat}</div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export const SkillWorkspaceLayout = ({
               // slides in from the right. The slide is driven by a CSS
               // keyframe animation triggered the first time this element
               // mounts (which matches the moment showForm flips to true).
-              'px-4 pb-6 md:p-4 md:bg-transparent',
+              'px-4 pb-4 md:p-4 md:bg-transparent',
             )}
             data-testid="skill-edit-configure-panel"
           >
@@ -154,7 +154,7 @@ export const SkillWorkspaceLayout = ({
             >
               <div className="min-h-0 flex-1 overflow-hidden">{form}</div>
               {deleteAction && (
-                <div className="border-border1 border-t px-4 pt-4 pb-4 md:px-6" data-testid="skill-edit-delete-action">
+                <div className="border-border1 border-t px-4 pt-4 pb-4 md:px-4" data-testid="skill-edit-delete-action">
                   {deleteAction}
                 </div>
               )}

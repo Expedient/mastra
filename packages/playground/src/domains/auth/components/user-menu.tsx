@@ -1,7 +1,7 @@
 import { Button } from '@mastra/playground-ui/components/Button';
 import { Popover, PopoverContent, PopoverTrigger } from '@mastra/playground-ui/components/Popover';
 import { Txt } from '@mastra/playground-ui/components/Txt';
-import { Loader2, Settings, X } from 'lucide-react';
+import { Loader2, Settings, X, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 
@@ -62,7 +62,7 @@ export function UserMenu({ user }: UserMenuProps) {
                 {displayName}
               </Txt>
               {user.email && (
-                <Txt variant="ui-sm" className="text-neutral3 truncate">
+                <Txt variant="ui-sm" className="text-muted-foreground truncate">
                   {user.email}
                 </Txt>
               )}
@@ -73,7 +73,7 @@ export function UserMenu({ user }: UserMenuProps) {
         {/* Preview as role section — only for admins with available roles */}
         {availableRoles && availableRoles.length > 0 && (
           <div className="border-border1 border-b p-2">
-            <Txt variant="ui-xs" className="text-neutral3 px-2 py-1 tracking-wider uppercase">
+            <Txt variant="ui-xs" className="text-muted-foreground px-2 py-1 tracking-wider uppercase">
               Preview as role
             </Txt>
             {availableRoles.map(role => {
@@ -91,13 +91,13 @@ export function UserMenu({ user }: UserMenuProps) {
                     }
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                  className={`text-ui-md flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
                     isActive ? 'bg-surface2' : 'hover:bg-surface2'
                   } ${isSwitching ? 'cursor-not-allowed opacity-50' : ''}`}
                 >
                   {isSwitching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   <span className="flex-1 capitalize">{role.name}</span>
-                  {isActive && <X className="text-neutral3 hover:text-neutral1 h-3.5 w-3.5" />}
+                  {isActive && <X className="text-muted-foreground hover:text-placeholder h-3.5 w-3.5" />}
                 </button>
               );
             })}
@@ -106,16 +106,22 @@ export function UserMenu({ user }: UserMenuProps) {
 
         <div className="flex flex-col gap-1 p-2">
           <Button
-            as={Link}
-            to="/settings"
+            render={<Link to="/settings" />}
+
             variant="ghost"
             className="w-full justify-start"
             onClick={() => setOpen(false)}
+            icon={<Settings />}
           >
-            <Settings className="h-4 w-4" />
             Settings
           </Button>
-          <Button variant="ghost" onClick={handleLogout} disabled={isPending} className="w-full justify-start">
+          <Button
+            icon={<LogOut />}
+            variant="ghost"
+            onClick={handleLogout}
+            disabled={isPending}
+            className="w-full justify-start"
+          >
             {isPending ? 'Signing out...' : 'Sign out'}
           </Button>
         </div>

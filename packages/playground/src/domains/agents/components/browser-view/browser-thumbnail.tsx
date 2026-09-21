@@ -1,5 +1,5 @@
+import { Badge } from '@mastra/playground-ui/components/Badge';
 import { Button } from '@mastra/playground-ui/components/Button';
-import { StatusBadge } from '@mastra/playground-ui/components/StatusBadge';
 import { cn } from '@mastra/playground-ui/utils/cn';
 import { Monitor, ChevronUp, ChevronDown, Maximize2, X } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -110,7 +110,7 @@ export function BrowserThumbnail({ agentName = 'Agent' }: BrowserThumbnailProps)
             <img ref={imgRef} alt="Browser preview" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <Monitor className="text-neutral3 h-5 w-5" />
+              <Monitor className="text-muted-foreground h-5 w-5" />
             </div>
           )}
           {/* Live indicator dot */}
@@ -120,16 +120,16 @@ export function BrowserThumbnail({ agentName = 'Agent' }: BrowserThumbnailProps)
         {/* Info section */}
         <div className="min-w-0 flex-1 text-left">
           <div className="flex items-center gap-2">
-            <span className="text-neutral6 truncate text-sm font-medium">{agentName}&apos;s browser</span>
-            <StatusBadge variant={isLive ? 'success' : 'neutral'} size="sm" withDot pulse={isLive}>
+            <span className="text-foreground text-ui-md truncate font-medium">{agentName}&apos;s browser</span>
+            <Badge variant={isLive ? 'green' : 'neutral'} size="sm" indicator={isLive ? 'pulse' : 'dot'}>
               {isLive ? 'Live' : 'Idle'}
-            </StatusBadge>
+            </Badge>
           </div>
-          <p className="text-neutral4 mt-0.5 truncate text-xs">{displayUrl}</p>
+          <p className="text-muted-foreground text-ui-sm mt-0.5 truncate">{displayUrl}</p>
         </div>
 
         {/* Expand/collapse indicator */}
-        <div className="text-neutral4 group-hover:text-neutral5 shrink-0 transition-colors">
+        <div className="text-muted-foreground group-hover:text-foreground shrink-0 transition-colors">
           {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronUp className="h-5 w-5" />}
         </div>
       </button>
@@ -169,7 +169,7 @@ export function BrowserThumbnail({ agentName = 'Agent' }: BrowserThumbnailProps)
           {toolCalls.length > 0 && (
             <div ref={actionsRef} className="border-border1 max-h-40 overflow-y-auto border-t">
               <div className="px-3 py-2">
-                <h4 className="text-neutral4 mb-2 text-xs font-medium">Browser Actions</h4>
+                <h4 className="text-muted-foreground text-ui-md mb-2 font-medium">Browser Actions</h4>
                 <div className="space-y-1">
                   {toolCalls.slice(-5).map(entry => (
                     <BrowserToolCallItem key={entry.toolCallId} entry={entry} />

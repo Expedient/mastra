@@ -12,6 +12,12 @@ import { createChildProcessLogger } from '../deploy/log.js';
 
 type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
 
+interface LockFileInfo {
+  path: string;
+  filename: string;
+  packageManager: PackageManager;
+}
+
 interface ArchitectureOptions {
   os?: string[];
   cpu?: string[];
@@ -39,6 +45,27 @@ const PNPM_CONFIG_KEYS_TO_COPY = new Set([
 function getTopLevelYamlKey(line: string) {
   const match = /^(?!\s)([\w-]+):/.exec(line);
   return match?.[1];
+}
+
+const PNPM_IGNORED_BUILDS_ERROR = 'ERR_PNPM_IGNORED_BUILDS';
+
+export function getPnpmIgnoredBuildPackages(output: string): string[] {
+  const match = new RegExp(`\\[?${PNPM_IGNORED_BUILDS_ERROR}\\]?[^\\n]*Ignored build scripts:\\s*([^\\n]+)`).exec(
+    output,
+  );
+  if (!match?.[1]) return [];
+
+  return match[1]
+    .split(',')
+    .map(specifier => specifier.trim())
+    .filter(Boolean)
+    .map(specifier => {
+      if (specifier.startsWith('@')) {
+        const versionSeparator = specifier.indexOf('@', 1);
+        return versionSeparator === -1 ? specifier : specifier.slice(0, versionSeparator);
+      }
+      return specifier.split('@', 1)[0]!;
+    });
 }
 
 function validatePnpmBuildApprovals(key: string, block: string): void {
@@ -148,19 +175,27 @@ export function copyPnpmWorkspaceSettings(source: string, options: InstallOption
 export class Deps extends MastraBase {
   private packageManager: PackageManager;
   private rootDir: string;
+  private lockFile: LockFileInfo | null;
 
   constructor(rootDir = process.cwd()) {
     super({ component: 'DEPLOYER', name: 'DEPS' });
 
     this.rootDir = rootDir;
-    this.packageManager = this.getPackageManager();
+    this.lockFile = this.findLockFile(rootDir);
+    this.packageManager = this.lockFile?.packageManager ?? 'npm';
   }
 
-  private findLockFile(dir: string): string | null {
-    const lockFiles = ['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'bun.lock'];
-    for (const file of lockFiles) {
-      if (fs.existsSync(path.join(dir, file))) {
-        return file;
+  private findLockFile(dir: string): LockFileInfo | null {
+    const lockFiles: Array<{ filename: string; packageManager: PackageManager }> = [
+      { filename: 'pnpm-lock.yaml', packageManager: 'pnpm' },
+      { filename: 'package-lock.json', packageManager: 'npm' },
+      { filename: 'yarn.lock', packageManager: 'yarn' },
+      { filename: 'bun.lock', packageManager: 'bun' },
+    ];
+    for (const lockFile of lockFiles) {
+      const lockFilePath = path.join(dir, lockFile.filename);
+      if (fs.existsSync(lockFilePath)) {
+        return { ...lockFile, path: lockFilePath };
       }
     }
     const parentDir = path.resolve(dir, '..');
@@ -168,22 +203,6 @@ export class Deps extends MastraBase {
       return this.findLockFile(parentDir);
     }
     return null;
-  }
-
-  private getPackageManager(): PackageManager {
-    const lockFile = this.findLockFile(this.rootDir);
-    switch (lockFile) {
-      case 'pnpm-lock.yaml':
-        return 'pnpm';
-      case 'package-lock.json':
-        return 'npm';
-      case 'yarn.lock':
-        return 'yarn';
-      case 'bun.lock':
-        return 'bun';
-      default:
-        return 'npm';
-    }
   }
 
   public getWorkspaceDependencyPath({ pkgName, version }: { pkgName: string; version: string }) {
@@ -276,18 +295,20 @@ export class Deps extends MastraBase {
    * Depending on whether we want to install or add a package, this function returns the appropriate commands.
    * All package managers support both commands (e.g. npm install has an alias on "add")
    */
-  private getPackageManagerCommand(pm: PackageManager, type: 'install' | 'add'): string {
+  private getPackageManagerCommand(
+    pm: PackageManager,
+    type: 'install' | 'add',
+    { yarnClassic = false }: { yarnClassic?: boolean } = {},
+  ): string {
     const cmd = type === 'install' ? 'install' : 'add';
 
     switch (pm) {
       case 'npm':
         return `${cmd} --audit=false --fund=false --loglevel=error --progress=false --update-notifier=false`;
       case 'yarn':
-        return `${cmd}`;
+        return type === 'install' && !yarnClassic ? `${cmd} --no-immutable` : cmd;
       case 'pnpm':
-        return cmd === 'install' ? `${cmd} --loglevel=error` : `${cmd} --loglevel=error`;
-      case 'bun':
-        return cmd;
+        return type === 'install' ? `${cmd} --no-frozen-lockfile --loglevel=error` : `${cmd} --loglevel=error`;
       default:
         return cmd;
     }
@@ -305,7 +326,20 @@ export class Deps extends MastraBase {
     pnpmNodeLinker?: 'hoisted';
   } = {}) {
     const pm = this.packageManager;
-    const installCommand = this.getPackageManagerCommand(pm, 'install');
+    let yarnClassic = false;
+    if (this.lockFile) {
+      const destination = path.join(dir, this.lockFile.filename);
+      if (path.resolve(this.lockFile.path) !== path.resolve(destination)) {
+        await fsPromises.copyFile(this.lockFile.path, destination);
+      }
+
+      if (pm === 'yarn') {
+        const lockfileContents = await fsPromises.readFile(destination, 'utf-8');
+        yarnClassic = /^# yarn lockfile v1\r?$/m.test(lockfileContents);
+      }
+    }
+
+    const installCommand = this.getPackageManagerCommand(pm, 'install', { yarnClassic });
     let args: string[] = [];
 
     switch (pm) {
@@ -333,11 +367,33 @@ export class Deps extends MastraBase {
       root: dir,
     });
 
-    return cpLogger({
-      cmd: `${pm} ${installCommand}`,
-      args,
-      env: process.env as Record<string, string>,
-    });
+    try {
+      return await cpLogger({
+        cmd: `${pm} ${installCommand}`,
+        args,
+        env: process.env as Record<string, string>,
+      });
+    } catch (error) {
+      if (pm !== 'pnpm') throw error;
+
+      const processOutput =
+        error && typeof error === 'object'
+          ? `${'stdout' in error ? String(error.stdout) : ''}\n${'stderr' in error ? String(error.stderr) : ''}`
+          : '';
+      const ignoredPackages = getPnpmIgnoredBuildPackages(processOutput);
+      if (ignoredPackages.length === 0) throw error;
+
+      throw new MastraError(
+        {
+          id: 'DEPLOYER_PNPM_IGNORED_BUILDS',
+          domain: ErrorDomain.DEPLOYER,
+          category: ErrorCategory.USER,
+          details: { packageNames: ignoredPackages.join(', ') },
+          text: `pnpm blocked build scripts for: ${ignoredPackages.join(', ')}. Add these packages to allowBuilds in pnpm-workspace.yaml and retry the build.`,
+        },
+        error,
+      );
+    }
   }
 
   public async installPackages(packages: string[]) {

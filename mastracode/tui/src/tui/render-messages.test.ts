@@ -7,6 +7,7 @@ import type { MastraDBMessage } from '@mastra/core/agent-controller';
 import { createSignal } from '@mastra/core/signals';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { AssistantRenderRegistry } from './assistant-render-registry.js';
 import { isChatBoundarySpacer } from './components/chat-boundary-spacer.js';
 import { JudgeDisplayComponent } from './components/judge-display.js';
 import { ReactiveSignalComponent } from './components/reactive-signal.js';
@@ -80,6 +81,7 @@ function createState(): TUIState {
     pendingTools: new Map(),
     pendingSubagents: new Map(),
     allShellComponents: [],
+    assistantRenderRegistry: new AssistantRenderRegistry(),
     messageComponentsById: new Map(),
     pendingSignalMessageComponentsById: new Map(),
     followUpComponents: [],
@@ -231,7 +233,23 @@ describe('addUserMessage', () => {
     expect((state.chatContainer.children[0] as TemporalGapComponent).render(80).join('\n')).toContain(
       '⏳ 15 minutes later',
     );
-    expect(state.messageComponentsById.size).toBe(0);
+    expect(state.messageComponentsById.get('__temporal_1')).toBe(state.chatContainer.children[0]);
+  });
+
+  // The addUserMessage dedup guard keys on messageComponentsById — a reminder
+  // that never registers renders twice if the same signal is dispatched again.
+  it('renders a reminder signal only once when the same message is dispatched twice', () => {
+    const state = createState();
+    const message = createReminderMessage({
+      reminderType: 'temporal-gap',
+      message: '15 minutes later — 9:15 AM',
+      gapText: '15 minutes later',
+    });
+
+    addUserMessage(state, message);
+    addUserMessage(state, message);
+
+    expect(state.chatContainer.children).toHaveLength(1);
   });
 
   it('renders and registers persisted goal-judge evaluations', () => {

@@ -60,7 +60,7 @@ export const MCPDetail = ({ isLoading, server }: MCPDetailProps) => {
   if (!server)
     return (
       <MainContentContent>
-        <Txt as="h1" variant="header-md" className="text-neutral3 py-20 text-center font-medium">
+        <Txt as="h1" variant="header-md" className="text-muted-foreground py-20 text-center font-medium">
           Server not found
         </Txt>
       </MainContentContent>
@@ -70,19 +70,19 @@ export const MCPDetail = ({ isLoading, server }: MCPDetailProps) => {
 
   return (
     <MainContentContent isDivided={true}>
-      <div className="mx-auto w-full max-w-2xl px-8 py-12">
-        <Txt as="h1" variant="header-md" className="text-neutral6 pb-4 font-medium">
+      <div className="mx-auto w-full max-w-2xl px-5 py-8">
+        <Txt as="h1" variant="header-md" className="text-foreground pb-4 font-medium">
           {server.name}
         </Txt>
 
-        <div className="flex items-center gap-1 pb-6">
-          <Badge icon={<FolderIcon className="text-neutral6" />} className="text-neutral4! rounded-r-sm">
+        <div className="flex items-center gap-1 pb-4">
+          <Badge icon={<FolderIcon />} size="sm">
             Version
           </Badge>
-          <Badge className="text-neutral4! rounded-l-sm">{server.version_detail.version}</Badge>
+          <Badge size="sm">{server.version_detail.version}</Badge>
         </div>
 
-        <Txt className="text-neutral3 pb-4">
+        <Txt className="text-muted-foreground pb-4">
           This MCP server can be accessed through multiple transport methods. Choose the one that best fits your use
           case.
         </Txt>
@@ -94,7 +94,9 @@ export const MCPDetail = ({ isLoading, server }: MCPDetailProps) => {
               Regular HTTP Endpoint
             </Badge>
 
-            <Txt className="text-neutral3 pt-1 pb-2">Use for stateless HTTP transport with streamable responses.</Txt>
+            <Txt className="text-muted-foreground pt-1 pb-2">
+              Use for stateless HTTP transport with streamable responses.
+            </Txt>
 
             <div className="flex items-start gap-2">
               <Txt className="bg-surface4 rounded-lg px-2 py-1">{httpStreamUrl}</Txt>
@@ -110,7 +112,7 @@ export const MCPDetail = ({ isLoading, server }: MCPDetailProps) => {
               Server-Sent Events
             </Badge>
 
-            <Txt className="text-neutral3 pt-1 pb-2">Use for real-time communication via SSE.</Txt>
+            <Txt className="text-muted-foreground pt-1 pb-2">Use for real-time communication via SSE.</Txt>
 
             <div className="flex items-start gap-2">
               <Txt className="bg-surface4 rounded-lg px-2 py-1">{sseUrl}</Txt>
@@ -124,7 +126,9 @@ export const MCPDetail = ({ isLoading, server }: MCPDetailProps) => {
           <div className="border-border1 bg-surface3 rounded-lg border p-4">
             <Badge icon={<span className="text-accent1 mr-1 w-6 font-mono font-medium">CLI</span>}>Command Line</Badge>
 
-            <Txt className="text-neutral3 pt-1 pb-2">Use for local command-line access via npx and mcp-remote.</Txt>
+            <Txt className="text-muted-foreground pt-1 pb-2">
+              Use for local command-line access via npx and mcp-remote.
+            </Txt>
 
             <div className="flex items-start gap-2">
               <Txt className="bg-surface4 rounded-lg px-2 py-1">{commandLineConfig}</Txt>
@@ -152,7 +156,7 @@ const McpToolList = ({ server }: { server: ServerInfo }) => {
 
   return (
     <div className="overflow-y-scroll p-5">
-      <div className="text-neutral6 flex items-center gap-2">
+      <div className="text-foreground flex items-center gap-2">
         <Icon size="lg" className="bg-surface4 rounded-md p-1">
           <McpServerIcon />
         </Icon>
@@ -162,7 +166,7 @@ const McpToolList = ({ server }: { server: ServerInfo }) => {
         </Txt>
       </div>
 
-      <div className="flex flex-col gap-2 pt-6">
+      <div className="flex flex-col gap-2 pt-4">
         {toolsKeyArray.map(toolId => {
           const tool = tools[toolId];
 
@@ -178,7 +182,7 @@ function hasAppUi(meta?: Record<string, unknown>): boolean {
   if (!meta) return false;
   const ui = meta.ui as { resourceUri?: string } | undefined;
   if (typeof ui?.resourceUri === 'string' && ui.resourceUri.startsWith('ui://')) return true;
-  if (typeof meta['ui/resourceUri'] === 'string' && (meta['ui/resourceUri'] as string).startsWith('ui://')) return true;
+  if (typeof meta['ui/resourceUri'] === 'string' && meta['ui/resourceUri'].startsWith('ui://')) return true;
   return false;
 }
 
@@ -186,7 +190,12 @@ const ToolEntry = ({ tool, serverId }: { tool: McpToolInfo; serverId: string }) 
   const linkRef = useRef<HTMLAnchorElement>(null);
   const { Link, paths } = useLinkComponent();
 
-  const ToolIconComponent = ToolIconMap[tool.toolType || 'tool'];
+  const ToolIconComponent =
+    tool.toolType === 'agent'
+      ? ToolIconMap.agent
+      : tool.toolType === 'workflow'
+        ? ToolIconMap.workflow
+        : ToolIconMap.tool;
   const isAppTool = hasAppUi(tool._meta);
 
   return (
@@ -198,10 +207,10 @@ const ToolEntry = ({ tool, serverId }: { tool: McpToolInfo; serverId: string }) 
       <EntityContent>
         <EntityName>
           <span className="flex items-center gap-2">
-            <Link ref={linkRef} href={paths.mcpServerToolLink(serverId, tool.id)}>
-              {tool.id}
+            <Link ref={linkRef} href={paths.mcpServerToolLink(serverId, tool.name)}>
+              {tool.name}
             </Link>
-            {isAppTool && <Badge className="py-0 text-[10px]">App</Badge>}
+            {isAppTool && <Badge size="xs">App</Badge>}
           </span>
         </EntityName>
         <EntityDescription>{tool.description}</EntityDescription>

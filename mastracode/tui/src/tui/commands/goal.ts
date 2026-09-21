@@ -14,8 +14,6 @@ import { Box, SelectList, Spacer, Text } from '@earendil-works/pi-tui';
 import type { SelectItem } from '@earendil-works/pi-tui';
 import { createGoalReminderSignal } from '@mastra/code-sdk/goal-signal';
 import { loadSettings, saveSettings } from '@mastra/code-sdk/onboarding/settings';
-import type { MastraDBMessage } from '@mastra/core/agent-controller';
-import { createSignal } from '@mastra/core/signals';
 import { GoalCyclesDialogComponent } from '../components/goal-cycles-dialog.js';
 import { ModelSelectorComponent } from '../components/model-selector.js';
 import type { ModelItem } from '../components/model-selector.js';
@@ -26,10 +24,6 @@ import { promptForApiKeyIfNeeded } from '../prompt-api-key.js';
 import { getSelectListTheme, theme } from '../theme.js';
 
 import type { SlashCommandContext } from './types.js';
-
-export interface StartGoalOptions {
-  trigger?: 'send' | 'none';
-}
 
 export async function handleGoalCommand(ctx: SlashCommandContext, args: string[]): Promise<void> {
   const { state } = ctx;
@@ -82,9 +76,8 @@ export async function handleGoalCommand(ctx: SlashCommandContext, args: string[]
     await goalManager.saveToThread(state);
     ctx.updateStatusLine();
 
-    // Kick off the next turn using the same goal-reminder signal format used by
-    // startGoal, so the model receives a structured system-reminder rather than
-    // a plain user message.
+    // The goal-reminder signal below is echoed back into the live stream as the
+    // goal box; rendering it here too would show the goal twice.
     const resumedGoal = goalManager.getGoal();
     try {
       await state.session.sendSignal(createGoalReminderSignal(resumedGoal!)).accepted;
@@ -236,13 +229,12 @@ export async function startGoalWithDefaults(
   ctx: SlashCommandContext,
   objective: string,
   cancelMessage = 'Goal cancelled.',
-  options: StartGoalOptions = {},
 ): Promise<void> {
   const defaults = getJudgeDefaults();
   const judgeDefaults = defaults ?? (await promptForJudgeDefaults(ctx, cancelMessage));
   if (!judgeDefaults) return;
 
-  await startGoal(ctx, objective, judgeDefaults.judgeModelId, judgeDefaults.maxTurns, options);
+  await startGoal(ctx, objective, judgeDefaults.judgeModelId, judgeDefaults.maxTurns);
 }
 
 function getJudgeDefaults(): JudgeDefaults | null {
@@ -324,33 +316,50 @@ async function startGoal(
   objective: string,
   judgeModelId: string,
   maxTurns: number,
-  options: StartGoalOptions = {},
 ): Promise<void> {
   const { state } = ctx;
   const goalManager = state.goalManager;
 
-  if (state.pendingNewThread) {
-    await state.session.thread.create();
-    state.pendingNewThread = false;
+  // `thread_created` is dispatched through a serial async queue, so its handler
+  // runs later — during the `setGoal` await below. Without this flag already set
+  // it takes the `loadFromThreadMetadata` branch and nulls the goal we are about
+  // to set, and the save below then clears the stored objective. Must be decided
+  // before the create: afterwards `getId()` always returns the new thread.
+  const shouldPersistToCreatedThread = state.pendingNewThread || !state.session.thread.getId();
+  if (shouldPersistToCreatedThread) {
+    goalManager.persistOnNextThreadCreate();
   }
 
-  const shouldPersistToCreatedThread = !state.session.thread.getId();
-  const goal = await goalManager.setGoal(state, objective, judgeModelId, maxTurns);
+  // Arming the flag ahead of the create means any failure between here and a
+  // successful start would otherwise leave it armed for an unrelated later
+  // thread to consume. Disarm on every exit that isn't a started goal — but
+  // only when this call is the one that armed it.
+  let goal: Awaited<ReturnType<typeof goalManager.setGoal>>;
+  try {
+    if (state.pendingNewThread) {
+      await state.session.thread.create();
+      state.pendingNewThread = false;
+    }
+
+    goal = await goalManager.setGoal(state, objective, judgeModelId, maxTurns);
+  } catch (error) {
+    if (shouldPersistToCreatedThread) {
+      goalManager.consumePersistOnNextThreadCreate();
+    }
+    throw error;
+  }
+
   if (!goal) {
+    if (shouldPersistToCreatedThread) {
+      goalManager.consumePersistOnNextThreadCreate();
+    }
     ctx.showError('Failed to set goal.');
     return;
   }
 
   state.planStartedGoalId = undefined;
-  if (shouldPersistToCreatedThread) {
-    goalManager.persistOnNextThreadCreate();
-  }
   await goalManager.saveToThread(state);
   ctx.updateStatusLine();
-
-  if (options.trigger === 'none') {
-    return;
-  }
 
   try {
     await state.session.sendSignal(createGoalReminderSignal(goal)).accepted;
@@ -359,22 +368,6 @@ async function startGoal(
     await goalManager.saveToThread(state);
     ctx.showError(`Goal paused — failed to start: ${err instanceof Error ? err.message : String(err)}`);
   }
-}
-
-export function createGoalReminderMessage(
-  goalId: string,
-  objective: string,
-  maxTurns: number,
-  judgeModelId: string,
-): MastraDBMessage {
-  return createSignal({
-    id: `goal-${goalId}`,
-    type: 'reactive',
-    tagName: 'system-reminder',
-    contents: objective,
-    attributes: { type: 'goal' },
-    metadata: { goalMaxTurns: maxTurns, judgeModelId },
-  } as Parameters<typeof createSignal>[0]).toDBMessage();
 }
 
 export function createGoalReminderXml(message: string): string {

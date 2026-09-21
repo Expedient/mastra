@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { EventEmitterPubSub } from '../../../events/event-emitter';
 import { RequestContext } from '../../../request-context';
 import { createTool } from '../../../tools';
+import type { MCPToolExecutionContext } from '../../../tools';
 import { LocalSandbox, Workspace } from '../../../workspace';
 import { Agent } from '../../agent';
 import { MessageList } from '../../message-list';
@@ -388,7 +389,7 @@ describe('DurableAgent', () => {
   });
 
   describe('globalRunRegistry', () => {
-    it('should populate globalRunRegistry in prepare() for consistency with stream()', async () => {
+    it('stores in-process execution context in globalRunRegistry during prepare()', async () => {
       const mockModel = new MockLanguageModelV2({
         doStream: async () => ({
           stream: convertArrayToReadableStream([
@@ -407,8 +408,17 @@ describe('DurableAgent', () => {
       });
 
       const durableAgent = createDurableAgent({ agent: baseAgent, pubsub });
+      const mcp: MCPToolExecutionContext = {
+        extra: {
+          signal: new AbortController().signal,
+          requestId: 'request-1',
+          sendNotification: vi.fn(),
+          sendRequest: vi.fn(),
+        },
+        elicitation: { sendRequest: vi.fn() },
+      };
 
-      const result = await durableAgent.prepare('Hello!');
+      const result = await durableAgent.prepare('Hello!', { mcp });
 
       // globalRunRegistry should have the entry (matching stream() behavior)
       expect(globalRunRegistry.has(result.runId)).toBe(true);
@@ -416,6 +426,8 @@ describe('DurableAgent', () => {
       const entry = globalRunRegistry.get(result.runId);
       expect(entry).toBeDefined();
       expect(entry!.model).toBeDefined();
+      expect(entry!.mcp).toBe(mcp);
+      expect(result.workflowInput.options).not.toHaveProperty('mcp');
 
       // Cleanup
       globalRunRegistry.delete(result.runId);
@@ -701,7 +713,7 @@ describe('createDurableAgentStream', () => {
     const runId = 'test-run-456';
     const receivedChunks: any[] = [];
 
-    const { output, cleanup } = createDurableAgentStream({
+    const { output, cleanup, ready } = createDurableAgentStream({
       pubsub,
       runId,
       messageId: 'msg-123',
@@ -715,9 +727,77 @@ describe('createDurableAgentStream', () => {
       },
     });
 
+    await ready;
     expect(output).toBeDefined();
 
-    // Clean up
+    cleanup();
+  });
+
+  it('should terminate when subscription setup fails', async () => {
+    const { createDurableAgentStream } = await import('../stream-adapter');
+    const subscribeError = new Error('subscription failed');
+    vi.spyOn(pubsub, 'subscribeWithReplay').mockRejectedValueOnce(subscribeError);
+
+    const { output, cleanup, ready } = createDurableAgentStream({
+      pubsub,
+      runId: 'test-subscription-failure',
+      messageId: 'msg-subscription-failure',
+      model: { modelId: 'test', provider: 'test', version: 'v3' },
+    });
+    const onError = vi.fn();
+    const consumption = output.consumeStream({ onError });
+
+    await expect(ready).rejects.toBe(subscribeError);
+    await consumption;
+    expect(onError).toHaveBeenCalledWith(subscribeError);
+    expect(() => {
+      cleanup();
+      cleanup();
+    }).not.toThrow();
+  });
+
+  it('should live-tail when resuming with a pubsub that does not support offsets', async () => {
+    const { createDurableAgentStream } = await import('../stream-adapter');
+    const subscribeSpy = vi.spyOn(pubsub, 'subscribe');
+    const subscribeFromOffsetSpy = vi.spyOn(pubsub, 'subscribeFromOffset');
+
+    const { cleanup, ready } = createDurableAgentStream({
+      pubsub,
+      runId: 'test-live-tail-resume',
+      messageId: 'msg-live-tail',
+      model: { modelId: 'test', provider: 'test', version: 'v3' },
+      offset: 3,
+    });
+
+    await ready;
+
+    expect(subscribeSpy).toHaveBeenCalledWith(AGENT_STREAM_TOPIC('test-live-tail-resume'), expect.any(Function), {
+      startFrom: 'latest',
+    });
+    expect(subscribeFromOffsetSpy).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('should use indexed replay when the pubsub supports offsets', async () => {
+    const { createDurableAgentStream } = await import('../stream-adapter');
+    vi.spyOn(pubsub, 'supportsOffsets', 'get').mockReturnValue(true);
+    const subscribeFromOffsetSpy = vi.spyOn(pubsub, 'subscribeFromOffset');
+
+    const { cleanup, ready } = createDurableAgentStream({
+      pubsub,
+      runId: 'test-offset-resume',
+      messageId: 'msg-offset',
+      model: { modelId: 'test', provider: 'test', version: 'v3' },
+      offset: 3,
+    });
+
+    await ready;
+
+    expect(subscribeFromOffsetSpy).toHaveBeenCalledWith(
+      AGENT_STREAM_TOPIC('test-offset-resume'),
+      3,
+      expect.any(Function),
+    );
     cleanup();
   });
 
@@ -1212,6 +1292,33 @@ describe('DurableAgent resume model metadata', () => {
       expect(Object.keys(await fork.listTools())).toEqual(expect.arrayContaining(['ping', 'extra']));
       // …while the original singleton is untouched.
       expect(Object.keys(await durableAgent.listTools())).not.toContain('extra');
+
+      await pubsub.close();
+    });
+
+    it('preserves a custom shouldPersistSnapshot policy on the fork', async () => {
+      const pubsub = new EventEmitterPubSub();
+      const baseAgent = new Agent({
+        id: 'fork-persist-agent',
+        name: 'Fork Persist Agent',
+        instructions: 'Code instructions',
+        model: 'openai/gpt-4o',
+      });
+      const customPredicate = ({ workflowStatus }: { workflowStatus: string }) => workflowStatus === 'suspended';
+      const durableAgent = createDurableAgent({
+        agent: baseAgent,
+        pubsub,
+        shouldPersistSnapshot: customPredicate,
+      });
+
+      const fork = durableAgent.__fork();
+
+      // The fork keeps the caller's persistence policy instead of reverting to
+      // the recovery-aware default (which would persist `pending`).
+      const forkPolicy = (fork as any).resolveShouldPersistSnapshot();
+      expect(forkPolicy).toBe(customPredicate);
+      expect(forkPolicy({ workflowStatus: 'pending', stepResults: {} })).toBe(false);
+      expect(forkPolicy({ workflowStatus: 'suspended', stepResults: {} })).toBe(true);
 
       await pubsub.close();
     });

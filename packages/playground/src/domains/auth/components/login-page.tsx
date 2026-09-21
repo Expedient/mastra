@@ -1,6 +1,7 @@
 import { Button } from '@mastra/playground-ui/components/Button';
-import { Input } from '@mastra/playground-ui/components/Input';
-import { Lock } from 'lucide-react';
+import { TextFieldBlock } from '@mastra/playground-ui/components/FormFieldBlocks';
+import { Notice } from '@mastra/playground-ui/components/Notice';
+import { Lock, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { useSSOLogin } from '../hooks/use-auth-actions';
 import { useAuthCapabilities } from '../hooks/use-auth-capabilities';
@@ -57,7 +58,7 @@ export function LoginPage({ redirectUri, onSuccess, initialMode = 'signin', erro
   if (isLoadingCapabilities) {
     return (
       <div className="bg-surface1 flex min-h-screen items-center justify-center">
-        <div className="text-neutral3">Loading...</div>
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
@@ -65,7 +66,7 @@ export function LoginPage({ redirectUri, onSuccess, initialMode = 'signin', erro
   if (!capabilities?.enabled || !capabilities?.login) {
     return (
       <div className="bg-surface1 flex min-h-screen items-center justify-center">
-        <div className="text-neutral3">Authentication is not configured</div>
+        <div className="text-muted-foreground">Authentication is not configured</div>
       </div>
     );
   }
@@ -117,13 +118,15 @@ export function LoginPage({ redirectUri, onSuccess, initialMode = 'signin', erro
 
   const description = login.description ? (
     <div className="border-border1 bg-surface1 flex items-start gap-2.5 rounded-md border p-3">
-      <Lock className="text-neutral4 mt-0.5 h-4 w-4 shrink-0" />
-      <p className="text-neutral3 text-sm">{login.description}</p>
+      <Lock className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
+      <p className="text-muted-foreground text-ui-md">{login.description}</p>
     </div>
   ) : null;
 
   const errorBanner = errorMessage ? (
-    <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-400">{errorMessage}</div>
+    <div role="alert">
+      <Notice variant="destructive">{errorMessage}</Notice>
+    </div>
   ) : null;
 
   return (
@@ -135,66 +138,58 @@ export function LoginPage({ redirectUri, onSuccess, initialMode = 'signin', erro
       {hasCredentials && (
         <form onSubmit={handleCredentialsSubmit} className="space-y-4">
           {!isSignIn && (
-            <div className="space-y-2">
-              <label htmlFor="name" className="text-neutral4 block text-sm">
-                Name
-              </label>
-              <Input
-                id="name"
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Your name"
-                variant="default"
-                size="lg"
-              />
-            </div>
+            <TextFieldBlock
+              name="name"
+              label="Name"
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Your name"
+              variant="default"
+              size="lg"
+            />
           )}
 
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-neutral4 block text-sm">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              variant="default"
-              size="lg"
-            />
-          </div>
+          <TextFieldBlock
+            name="email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            variant="default"
+            size="lg"
+          />
 
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-neutral4 block text-sm">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder={isSignIn ? 'Enter your password' : 'Create a password'}
-              required
-              variant="default"
-              size="lg"
-            />
-          </div>
+          <TextFieldBlock
+            name="password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder={isSignIn ? 'Enter your password' : 'Create a password'}
+            required
+            variant="default"
+            size="lg"
+          />
 
-          {error && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-400">{error.message}</div>}
+          {error ? (
+            <div role="alert">
+              <Notice variant="destructive">{error.message}</Notice>
+            </div>
+          ) : null}
 
-          <Button type="submit" disabled={isPending} className="w-full" size="lg">
+          <Button icon={<LogIn />} type="submit" disabled={isPending} className="w-full" size="lg">
             {isPending ? (isSignIn ? 'Signing in...' : 'Creating account...') : isSignIn ? 'Sign in' : 'Create account'}
           </Button>
 
           {signUpEnabled && (
-            <div className="text-center text-sm">
-              <span className="text-neutral3">
+            <div className="text-ui-md text-center">
+              <span className="text-muted-foreground">
                 {isSignIn ? "Don't have an account? " : 'Already have an account? '}
               </span>
-              <button type="button" onClick={toggleMode} className="text-neutral6 hover:underline">
+              <button type="button" onClick={toggleMode} className="text-foreground hover:underline">
                 {isSignIn ? 'Sign up' : 'Sign in'}
               </button>
             </div>
@@ -207,8 +202,8 @@ export function LoginPage({ redirectUri, onSuccess, initialMode = 'signin', erro
           <div className="absolute inset-0 flex items-center">
             <div className="border-border1 w-full border-t" />
           </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-surface1 text-neutral3 px-2">or continue with</span>
+          <div className="text-ui-md relative flex justify-center">
+            <span className="bg-surface1 text-muted-foreground px-2">or continue with</span>
           </div>
         </div>
       )}

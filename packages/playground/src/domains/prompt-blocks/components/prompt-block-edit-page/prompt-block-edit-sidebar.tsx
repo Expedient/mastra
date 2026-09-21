@@ -1,11 +1,9 @@
 import { Button } from '@mastra/playground-ui/components/Button';
-import { Input } from '@mastra/playground-ui/components/Input';
+import { TextareaFieldBlock, TextFieldBlock } from '@mastra/playground-ui/components/FormFieldBlocks';
 import { JSONSchemaForm, jsonSchemaToFields } from '@mastra/playground-ui/components/JSONSchemaForm';
 import type { SchemaField } from '@mastra/playground-ui/components/JSONSchemaForm';
-import { Label } from '@mastra/playground-ui/components/Label';
 import { ScrollArea } from '@mastra/playground-ui/components/ScrollArea';
 import { Spinner } from '@mastra/playground-ui/components/Spinner';
-import { Textarea } from '@mastra/playground-ui/components/Textarea';
 import { Txt } from '@mastra/playground-ui/components/Txt';
 import type { JsonSchema } from '@mastra/playground-ui/utils/json-schema';
 import { Check, Plus, PlusIcon, Save } from 'lucide-react';
@@ -125,38 +123,25 @@ export function PromptBlockEditSidebar({
   return (
     <div className="flex h-full flex-col">
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-6 p-4">
+        <div className="flex flex-col gap-4 p-4">
           <SectionHeader title="Configuration" subtitle="Define your prompt block's name and description." />
 
-          {/* Name */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prompt-block-name" className="text-neutral5 text-xs">
-              Name <span className="text-accent2">*</span>
-            </Label>
-            <Input
-              id="prompt-block-name"
-              placeholder="My Prompt Block"
-              variant="outline"
-              {...register('name')}
-              error={!!errors.name}
-            />
-            {errors.name && <span className="text-accent2 text-xs">{errors.name.message}</span>}
-          </div>
+          <TextFieldBlock
+            label="Name"
+            required
+            placeholder="My Prompt Block"
+            variant="outline"
+            {...register('name')}
+            errorMsg={errors.name?.message}
+          />
 
-          {/* Description */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prompt-block-description" className="text-neutral5 text-xs">
-              Description
-            </Label>
-            <Textarea
-              id="prompt-block-description"
-              placeholder="Describe what this prompt block does"
-              variant="outline"
-              {...register('description')}
-              error={!!errors.description}
-            />
-            {errors.description && <span className="text-accent2 text-xs">{errors.description.message}</span>}
-          </div>
+          <TextareaFieldBlock
+            label="Description"
+            placeholder="Describe what this prompt block does"
+            variant="outline"
+            {...register('description')}
+            errorMsg={errors.description?.message}
+          />
         </div>
 
         {/* Variables */}
@@ -205,14 +190,14 @@ export function PromptBlockEditSidebar({
                     onClick={() => navigate(paths.agentLink(agent.id))}
                     className="hover:bg-surface3 flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
                   >
-                    <Txt variant="ui-sm" className="text-neutral5 truncate">
+                    <Txt variant="ui-sm" className="text-foreground truncate">
                       {agent.name || agent.id}
                     </Txt>
                   </button>
                 ))}
               </div>
             ) : (
-              <Txt variant="ui-sm" className="text-neutral3">
+              <Txt variant="ui-sm" className="text-muted-foreground">
                 Not referenced by any agents yet.
               </Txt>
             )}

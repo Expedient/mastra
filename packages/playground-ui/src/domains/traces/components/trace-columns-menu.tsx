@@ -1,4 +1,4 @@
-import { Columns3Icon, PlusIcon } from 'lucide-react';
+import { Columns3Icon, PlusIcon, Columns3, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { TRACE_USAGE_COLUMNS } from '../trace-list-columns';
 import type { TraceColumnPreferences, TraceOptionalColumn } from '../trace-list-columns';
@@ -13,8 +13,7 @@ import {
   DialogTitle,
 } from '@/ds/components/Dialog';
 import { DropdownMenu } from '@/ds/components/DropdownMenu';
-import { Input } from '@/ds/components/Input';
-import { Label } from '@/ds/components/Label';
+import { TextFieldBlock } from '@/ds/components/FormFieldBlocks';
 
 const STANDARD_COLUMNS: readonly TraceOptionalColumn[] = ['input', 'entity', 'duration'];
 
@@ -77,8 +76,7 @@ export function TraceColumnsMenu({
       <DropdownMenu>
         <DropdownMenu.Trigger
           render={
-            <Button variant="outline" size="md">
-              <Columns3Icon aria-hidden />
+            <Button variant="ghost" size="md" icon={<Columns3Icon aria-hidden />}>
               Columns
             </Button>
           }
@@ -108,7 +106,7 @@ export function TraceColumnsMenu({
             </DropdownMenu.CheckboxItem>
           ))}
           {usageDisabledReason && (
-            <p className="text-ui-xs leading-ui-sm text-neutral2 px-2 py-1" role="note">
+            <p className="text-ui-xs leading-ui-sm text-placeholder px-2 py-1" role="note">
               {usageDisabledReason}
             </p>
           )}
@@ -144,10 +142,10 @@ export function TraceColumnsMenu({
                 Enter a top-level trace metadata key. Only the key is saved, never its values.
               </DialogDescription>
             </DialogHeader>
-            <DialogBody className="space-y-2">
-              <Label htmlFor="trace-metadata-key">Metadata key</Label>
-              <Input
-                id="trace-metadata-key"
+            <DialogBody>
+              <TextFieldBlock
+                name="trace-metadata-key"
+                label="Metadata key"
                 value={metadataKey}
                 onChange={event => {
                   setMetadataKey(event.target.value);
@@ -155,20 +153,14 @@ export function TraceColumnsMenu({
                 }}
                 placeholder="tenantId"
                 autoFocus
-                error={Boolean(metadataError)}
-                aria-describedby={metadataError ? 'trace-metadata-key-error' : undefined}
+                errorMsg={metadataError}
               />
-              {metadataError && (
-                <p id="trace-metadata-key-error" className="text-ui-xs text-error" role="alert">
-                  {metadataError}
-                </p>
-              )}
             </DialogBody>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
+              <Button icon={<X />} type="button" variant="outline" onClick={() => handleDialogOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary">
+              <Button icon={<Columns3 />} type="submit" variant="primary">
                 Add column
               </Button>
             </DialogFooter>
