@@ -66,6 +66,32 @@ describe('width-aware custom component rendering', () => {
     expect(component.render(140).join('\n')).toContain('unique-restored-tail');
   });
 
+  it('keeps background completion notifications compact until expanded', () => {
+    const component = new NotificationComponent({
+      message: 'view failed in background',
+      source: 'background-work',
+      priority: 'high',
+      kind: 'background-task-failed',
+      status: 'failed',
+      backgroundCompletion: {
+        taskId: 'task-1',
+        toolName: 'view',
+        argsSummary: '{"path":"missing.ts"}',
+        errorSummary: 'File not found: missing.ts',
+      },
+    });
+
+    const compact = component.render(140).join('\n');
+    expect(compact).toContain('failed in background');
+    expect(compact).toContain('task-1');
+    expect(compact).not.toContain('File not found');
+
+    component.setExpanded(true);
+    const expanded = component.render(140).join('\n');
+    expect(expanded).toContain('invocation · {"path":"missing.ts"}');
+    expect(expanded).toContain('failure · File not found: missing.ts');
+  });
+
   it('reflows expanded observational-memory output without collapsing it', () => {
     const component = new OMOutputComponent({ type: 'observation', observations: source });
     component.setExpanded(true);
@@ -80,6 +106,16 @@ describe('width-aware custom component rendering', () => {
     expectReflow(component);
     expect(component.isExpanded()).toBe(true);
     expect(component.render(140).join('\n')).toContain('unique-restored-tail');
+  });
+
+  it('reflows ANSI-styled shell output across simple and complex Unicode widths', () => {
+    const component = new ShellStreamComponent('printf styled output');
+    component.setExpanded(true);
+    component.appendOutput(`\x1b[31mℹ ${source}\x1b[0m 中文 Café 👩‍💻`);
+
+    expectReflow(component, 180, 32);
+    expect(component.render(32).every(line => visibleWidth(line) <= 32)).toBe(true);
+    expect(component.render(180).join('\n')).toContain('unique-restored-tail');
   });
 
   it('reflows expanded slash-command output without collapsing it', () => {

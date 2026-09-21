@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 
 import { useAgentEditFormContext } from '../../context/agent-edit-form-context';
 import { useCompareAgentVersions } from '../../hooks/use-agent-versions';
+import { getEditorOwnership } from '../../utils/editor-ownership';
 import { InstructionBlocksPage } from '../agent-cms-pages/instruction-blocks-page';
 import { ToolsPage } from '../agent-cms-pages/tools-page';
 import { useStoredPromptBlock } from '@/domains/prompt-blocks';
@@ -28,7 +29,7 @@ function ConfigTabLabel({ title, icon, badge }: { title: string; icon: React.Rea
       <Txt as="span" variant="ui-sm" className="text-inherit">
         {title}
       </Txt>
-      {badge}
+      {badge !== undefined && badge !== null ? <> {badge}</> : null}
     </>
   );
 }
@@ -44,9 +45,11 @@ function VariableProperty({ name, prop, depth }: { name: string; prop: JsonSchem
   return (
     <div style={depth > 0 ? { paddingLeft: depth * 12 } : undefined}>
       <div className="flex items-center gap-2 py-1">
-        <code className="text-accent1 text-xs">{name}</code>
-        <span className="text-neutral3 text-[11px]">{typeLabel}</span>
-        {prop.description && <span className="text-neutral3 truncate text-[11px] italic">— {prop.description}</span>}
+        <code className="text-accent1 text-ui-sm">{name}</code>
+        <span className="text-muted-foreground text-ui-sm">{typeLabel}</span>
+        {prop.description && (
+          <span className="text-muted-foreground text-ui-sm truncate italic">— {prop.description}</span>
+        )}
       </div>
       {hasChildren && (
         <div className="border-border1 ml-1 border-l">
@@ -161,7 +164,7 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
               <BlockCopyButton block={block} />
             </div>
           )}
-          <Txt variant="ui-sm" className="text-neutral4 font-mono whitespace-pre-wrap">
+          <Txt variant="ui-sm" className="text-muted-foreground font-mono whitespace-pre-wrap">
             {oldStr || '(empty)'}
           </Txt>
         </div>
@@ -170,7 +173,7 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
 
     const diffLines = computeLineDiff(oldStr, newStr);
     return (
-      <div className="border-border1 relative overflow-hidden rounded-md border font-mono text-sm">
+      <div className="border-border1 text-ui-md relative overflow-hidden rounded-md border font-mono">
         {block && (
           <div className="absolute top-2 right-2 z-10">
             <BlockCopyButton block={block} />
@@ -183,10 +186,10 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
               'px-3 py-0.5 whitespace-pre-wrap wrap-break-word',
               line.type === 'removed' && 'bg-red-950/20 text-red-300',
               line.type === 'added' && 'bg-green-950/20 text-green-300',
-              line.type === 'equal' && 'text-neutral4',
+              line.type === 'equal' && 'text-muted-foreground',
             )}
           >
-            <span className="text-neutral3/50 mr-2 inline-block w-4 shrink-0 select-none">
+            <span className="text-muted-foreground/50 mr-2 inline-block w-4 shrink-0 select-none">
               {line.type === 'removed' ? '−' : line.type === 'added' ? '+' : ' '}
             </span>
             {line.text || '\u00A0'}
@@ -208,7 +211,7 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
 
         if (!prevBlock && currBlock) {
           return (
-            <div key={idx} className="rounded-md border border-green-900/30 bg-green-950/10 p-3 font-mono text-sm">
+            <div key={idx} className="text-ui-md rounded-md border border-green-900/30 bg-green-950/10 p-3 font-mono">
               <Txt variant="ui-xs" className="mb-1 text-green-400">
                 + Added block
               </Txt>
@@ -221,7 +224,10 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
 
         if (prevBlock && !currBlock) {
           return (
-            <div key={idx} className="relative rounded-md border border-red-900/30 bg-red-950/10 p-3 font-mono text-sm">
+            <div
+              key={idx}
+              className="text-ui-md relative rounded-md border border-red-900/30 bg-red-950/10 p-3 font-mono"
+            >
               <div className="absolute top-2 right-2">
                 <BlockCopyButton block={prevBlock} />
               </div>
@@ -243,7 +249,7 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
                   <BlockCopyButton block={prevBlock} />
                 </div>
               )}
-              <Txt variant="ui-sm" className="text-neutral4 font-mono whitespace-pre-wrap">
+              <Txt variant="ui-sm" className="text-muted-foreground font-mono whitespace-pre-wrap">
                 {oldStr || '(empty)'}
               </Txt>
             </div>
@@ -252,7 +258,7 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
 
         const diffLines = computeLineDiff(oldStr, newStr);
         return (
-          <div key={idx} className="border-border1 relative overflow-hidden rounded-md border font-mono text-sm">
+          <div key={idx} className="border-border1 text-ui-md relative overflow-hidden rounded-md border font-mono">
             {prevBlock && (
               <div className="absolute top-2 right-2 z-10">
                 <BlockCopyButton block={prevBlock} />
@@ -265,10 +271,10 @@ function InstructionsDiffView({ previousBlocks, currentBlocks }: { previousBlock
                   'px-3 py-0.5 whitespace-pre-wrap wrap-break-word',
                   line.type === 'removed' && 'bg-red-950/20 text-red-300',
                   line.type === 'added' && 'bg-green-950/20 text-green-300',
-                  line.type === 'equal' && 'text-neutral4',
+                  line.type === 'equal' && 'text-muted-foreground',
                 )}
               >
-                <span className="text-neutral3/50 mr-2 inline-block w-4 shrink-0 select-none">
+                <span className="text-muted-foreground/50 mr-2 inline-block w-4 shrink-0 select-none">
                   {line.type === 'removed' ? '−' : line.type === 'added' ? '+' : ' '}
                 </span>
                 {line.text || '\u00A0'}
@@ -301,11 +307,11 @@ function RefBlockPreview({ promptBlockId }: { promptBlockId: string }) {
         </div>
       )}
       {promptBlock?.name && (
-        <Txt variant="ui-xs" className="text-neutral3 mb-1 font-medium">
+        <Txt variant="ui-xs" className="text-muted-foreground mb-1 font-medium">
           {promptBlock.name}
         </Txt>
       )}
-      <Txt variant="ui-sm" className="text-neutral4 font-mono whitespace-pre-wrap">
+      <Txt variant="ui-sm" className="text-muted-foreground font-mono whitespace-pre-wrap">
         {content || '(empty)'}
       </Txt>
     </div>
@@ -317,7 +323,7 @@ function ReadOnlyInstructions({ blocks }: { blocks: unknown }) {
 
   if (blocksArr.length === 0) {
     return (
-      <Txt variant="ui-sm" className="text-neutral3 py-2">
+      <Txt variant="ui-sm" className="text-muted-foreground py-2">
         No instruction blocks configured
       </Txt>
     );
@@ -339,7 +345,7 @@ function ReadOnlyInstructions({ blocks }: { blocks: unknown }) {
                 <CopyButton content={content} tooltip="Copy prompt text" size="sm" />
               </div>
             )}
-            <Txt variant="ui-sm" className="text-neutral4 font-mono whitespace-pre-wrap">
+            <Txt variant="ui-sm" className="text-muted-foreground font-mono whitespace-pre-wrap">
               {content || '(empty)'}
             </Txt>
           </div>
@@ -388,18 +394,18 @@ function ToolsDiffView({
                 'font-mono',
                 status === 'removed' && 'text-red-300 line-through',
                 status === 'added' && 'text-green-300',
-                status === 'same' && 'text-neutral5',
+                status === 'same' && 'text-foreground',
               )}
             >
               {tool}
             </Txt>
             {status === 'removed' && (
-              <Badge variant="error" className="ml-auto">
+              <Badge variant="red" className="ml-auto">
                 removed in latest
               </Badge>
             )}
             {status === 'added' && (
-              <Badge variant="success" className="ml-auto">
+              <Badge variant="green" className="ml-auto">
                 added in latest
               </Badge>
             )}
@@ -415,7 +421,7 @@ function ReadOnlyTools({ tools }: { tools: Record<string, unknown> | undefined }
 
   if (entries.length === 0) {
     return (
-      <Txt variant="ui-sm" className="text-neutral3 py-2">
+      <Txt variant="ui-sm" className="text-muted-foreground py-2">
         No tools configured
       </Txt>
     );
@@ -425,11 +431,11 @@ function ReadOnlyTools({ tools }: { tools: Record<string, unknown> | undefined }
     <div className="flex flex-col gap-1.5">
       {entries.map(([id, config]) => (
         <div key={id} className="border-border1 bg-surface2 rounded-md border px-3 py-1.5">
-          <Txt variant="ui-sm" className="text-neutral5 font-mono">
+          <Txt variant="ui-sm" className="text-foreground font-mono">
             {id}
           </Txt>
           {(config as Record<string, unknown>)?.description ? (
-            <Txt variant="ui-xs" className="text-neutral3 mt-0.5">
+            <Txt variant="ui-xs" className="text-muted-foreground mt-0.5">
               {String((config as Record<string, unknown>).description)}
             </Txt>
           ) : null}
@@ -455,7 +461,7 @@ function VariablesDiffView({
 
   if (allKeys.length === 0) {
     return (
-      <Txt variant="ui-sm" className="text-neutral3 py-2">
+      <Txt variant="ui-sm" className="text-muted-foreground py-2">
         No variables configured
       </Txt>
     );
@@ -488,18 +494,18 @@ function VariablesDiffView({
                 'font-mono',
                 status === 'removed' && 'text-red-300 line-through',
                 status === 'added' && 'text-green-300',
-                status === 'same' && 'text-neutral5',
+                status === 'same' && 'text-foreground',
               )}
             >
               {`{{${name}}}`}
             </Txt>
             {status === 'removed' && (
-              <Badge variant="error" className="ml-auto">
+              <Badge variant="red" className="ml-auto">
                 removed in latest
               </Badge>
             )}
             {status === 'added' && (
-              <Badge variant="success" className="ml-auto">
+              <Badge variant="green" className="ml-auto">
                 added in latest
               </Badge>
             )}
@@ -516,7 +522,7 @@ function ReadOnlyVariables({ variables }: { variables: Record<string, unknown> |
 
   if (entries.length === 0) {
     return (
-      <Txt variant="ui-sm" className="text-neutral3 py-2">
+      <Txt variant="ui-sm" className="text-muted-foreground py-2">
         No variables configured
       </Txt>
     );
@@ -526,11 +532,11 @@ function ReadOnlyVariables({ variables }: { variables: Record<string, unknown> |
     <div className="flex flex-col gap-1.5">
       {entries.map(([name, schema]) => (
         <div key={name} className="border-border1 bg-surface2 flex items-center gap-2 rounded-md border px-3 py-1.5">
-          <Txt variant="ui-sm" className="text-neutral5 font-mono">
+          <Txt variant="ui-sm" className="text-foreground font-mono">
             {`{{${name}}}`}
           </Txt>
           {(schema as Record<string, unknown>)?.type ? (
-            <Badge variant="default">{String((schema as Record<string, unknown>).type)}</Badge>
+            <Badge>{String((schema as Record<string, unknown>).type)}</Badge>
           ) : null}
         </div>
       ))}
@@ -578,26 +584,26 @@ function ReadOnlyConfigWithDiff({
   const variablesDiff = diffMap.get('requestContextSchema');
 
   const instructionsBadge = instructionsDiff ? (
-    <Badge variant="warning" size="sm">
+    <Badge variant="yellow" size="sm">
       modified
     </Badge>
   ) : null;
   const toolsBadge = toolsDiff ? (
-    <Badge variant="warning" size="sm">
+    <Badge variant="yellow" size="sm">
       modified
     </Badge>
   ) : toolCount > 0 ? (
-    <Badge variant="default" size="sm">{`${toolCount}`}</Badge>
+    <Badge size="sm">{`${toolCount}`}</Badge>
   ) : null;
   const variablesBadge = variablesDiff ? (
-    <Badge variant="warning" size="sm">
+    <Badge variant="yellow" size="sm">
       modified
     </Badge>
   ) : null;
 
   if (isLoadingCompare) {
     return (
-      <div className="flex items-center justify-center py-8">
+      <div className="flex items-center justify-center py-5">
         <Spinner className="h-5 w-5" />
       </div>
     );
@@ -664,7 +670,8 @@ interface AgentPlaygroundConfigProps {
 }
 
 export function AgentPlaygroundConfig({ agentId, selectedVersionId, latestVersionId }: AgentPlaygroundConfigProps) {
-  const { form, readOnly } = useAgentEditFormContext();
+  const { form, readOnly, isCodeAgentOverride, editorConfig } = useAgentEditFormContext();
+  const { isInstructionsLocked } = getEditorOwnership(isCodeAgentOverride, editorConfig);
   const tools = form.watch('tools');
   const instructionBlocks = form.watch('instructionBlocks');
   const variables = form.watch('variables') as JsonSchema | undefined;
@@ -698,7 +705,7 @@ export function AgentPlaygroundConfig({ agentId, selectedVersionId, latestVersio
                 <ConfigTabLabel
                   title="Tools"
                   icon={<Wrench />}
-                  badge={toolCount > 0 ? <Badge variant="default" size="sm">{`${toolCount}`}</Badge> : undefined}
+                  badge={toolCount > 0 ? <Badge size="sm">{`${toolCount}`}</Badge> : undefined}
                 />
               </Tab>
             </TabList>
@@ -712,7 +719,7 @@ export function AgentPlaygroundConfig({ agentId, selectedVersionId, latestVersio
                     ))}
                   </div>
                 ) : null}
-                <Txt variant="ui-xs" className="text-neutral3 mt-1">
+                <Txt variant="ui-xs" className="text-muted-foreground mt-1">
                   {variableEntries.length > 0
                     ? 'Defined via requestContextSchema in code.'
                     : 'No variables defined. Add a requestContextSchema to your agent to define variables.'}
@@ -722,10 +729,10 @@ export function AgentPlaygroundConfig({ agentId, selectedVersionId, latestVersio
 
             <TabContent value="instructions" className="px-4 py-0 pb-4">
               <div className="flex flex-col gap-3 pt-4 pb-2">
-                <Txt variant="ui-sm" className="text-neutral3 font-normal">
+                <Txt variant="ui-sm" className="text-muted-foreground font-normal">
                   Add instruction blocks to your agent. Blocks are combined in order to form the system prompt. You can{' '}
                   <Tooltip>
-                    <TooltipTrigger className="text-neutral3 hover:text-neutral5 inline cursor-pointer underline decoration-dotted">
+                    <TooltipTrigger className="text-muted-foreground hover:text-foreground inline cursor-pointer underline decoration-dotted">
                       use variables
                     </TooltipTrigger>
                     <TooltipContent side="bottom" align="start" className="max-w-72">
@@ -739,7 +746,11 @@ export function AgentPlaygroundConfig({ agentId, selectedVersionId, latestVersio
                 </Txt>
               </div>
 
-              {readOnly ? <ReadOnlyInstructions blocks={instructionBlocks} /> : <InstructionBlocksPage />}
+              {readOnly || isInstructionsLocked ? (
+                <ReadOnlyInstructions blocks={instructionBlocks} />
+              ) : (
+                <InstructionBlocksPage />
+              )}
             </TabContent>
 
             <TabContent value="tools" className="px-4 py-0 pb-4">

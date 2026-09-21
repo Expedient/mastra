@@ -34,7 +34,6 @@ import * as path from 'node:path';
 import type { MastraBrowser } from '../browser';
 import type { IMastraLogger } from '../logger';
 import { RequestContext } from '../request-context';
-import { pMap, pMapSkip } from '../utils/p-map';
 import type { MastraVector } from '../vector';
 
 import { WorkspaceError, SearchNotAvailableError, WorkspaceNotReadyError } from './errors';
@@ -60,7 +59,12 @@ import type {
 } from './search';
 import { SearchEngine, splitIntoChunks } from './search';
 import type { WorkspaceSkills, SkillsResolver, SkillSource } from './skills';
-import { WorkspaceSkillsImpl, LocalSkillSource } from './skills';
+import {
+  WorkspaceSkillsImpl,
+  ResolvedSourceWorkspaceSkills,
+  LocalSkillSource,
+  SKILL_SCOPE_DOCUMENT_PREFIX,
+} from './skills';
 import type { WorkspaceToolsConfig } from './tools';
 import type { WorkspaceStatus } from './types';
 
@@ -529,6 +533,8 @@ export interface WorkspaceInfo {
  * (`batchReadFiles`).
  */
 const FS_READ_CONCURRENCY = 8;
+/** Mirrors SearchEngine.search default when no topK is supplied. */
+const DEFAULT_SEARCH_TOP_K = 10;
 
 /**
  * Parse the user-facing `bm25` config union into the `BM25SearchConfig` shape
@@ -552,10 +558,27 @@ function parseBM25Config(
 // =============================================================================
 
 /**
- * Workspace provides agents with filesystem and execution capabilities.
+ * Provides agents with filesystem and execution capabilities through configured providers.
  *
- * At minimum, a workspace has either a filesystem or a sandbox (or both).
- * Users pass instantiated provider objects to the constructor.
+ * Supply a filesystem, a sandbox, or both. File operations require a filesystem;
+ * command execution requires a sandbox.
+ *
+ * @example
+ * ```typescript
+ * import { Workspace, LocalFilesystem } from '@mastra/core/workspace';
+ *
+ * const workspace = new Workspace({
+ *   filesystem: new LocalFilesystem({ basePath: './my-workspace' }),
+ * });
+ * ```
+ *
+ * @see For documentation bundled with your installed package, locate
+ * `@mastra/core/package.json` with your project's resolver or package-manager
+ * tooling, then read `dist/docs/SKILL.md` from that package root and follow its
+ * reference links. Use package-manager tools for virtual or archived packages.
+ *
+ * @see [Workspace documentation](https://mastra.ai/docs/workspace/overview)
+ * if packaged docs are unavailable.
  */
 export class Workspace<
   TFilesystem extends WorkspaceFilesystem | undefined = WorkspaceFilesystem | undefined,
@@ -569,6 +592,7 @@ export class Workspace<
 
   private _status: WorkspaceStatus = 'pending';
   private _destroyPromise?: Promise<void>;
+  private _stopPromise?: Promise<void>;
   private readonly _fs?: WorkspaceFilesystem;
   private readonly _filesystemResolver?: WorkspaceFilesystemResolver;
   private readonly _sandbox?: WorkspaceSandbox;
@@ -951,17 +975,37 @@ export class Workspace<
 
     // Lazy initialization
     if (!this._skills) {
-      // Priority: explicit skillSource > workspace filesystem > LocalSkillSource (read-only from local disk)
-      const source = this._config.skillSource ?? this._fs ?? new LocalSkillSource();
-
-      this._skills = new WorkspaceSkillsImpl({
-        source,
+      const baseConfig = {
         skills: this._config.skills!,
         searchEngine: this._searchEngine,
         validateOnLoad: true,
         assertAvailable: () => this.assertSearchWritable(),
         checkSkillFileMtime: this._config.checkSkillFileMtime,
-      });
+      };
+
+      // Priority: explicit skillSource > resolved filesystem (per request) > static filesystem
+      //           > LocalSkillSource (read-only from local disk, only when no filesystem is configured)
+      if (!this._config.skillSource && this._filesystemResolver) {
+        this._skills = new ResolvedSourceWorkspaceSkills({
+          ...baseConfig,
+          source: async ({ requestContext }) => {
+            const fs = await this.resolveFilesystem({ requestContext: requestContext ?? new RequestContext() });
+            if (!fs) {
+              throw new WorkspaceError(
+                'Filesystem resolver returned no filesystem; cannot discover skills',
+                'FILESYSTEM_NOT_RESOLVED',
+                this.id,
+              );
+            }
+            return fs;
+          },
+        });
+      } else {
+        this._skills = new WorkspaceSkillsImpl({
+          ...baseConfig,
+          source: this._config.skillSource ?? this._fs ?? new LocalSkillSource(),
+        });
+      }
     }
 
     return this._skills;
@@ -1048,18 +1092,36 @@ export class Workspace<
       throw new SearchNotAvailableError();
     }
     this.lastAccessedAt = new Date();
-    return this._searchEngine.search(query, options);
+
+    // Documents tagged with `skillScope` belong to request-scoped skill views
+    // (dynamic paths or resolver-backed filesystems). They are only meaningful
+    // through `skills.getScoped(...).search()`; exposing them here would leak
+    // one request's skills into another's unscoped workspace search. Exclude
+    // them in the vector query so persisted records from previous processes do
+    // not consume topK before filtering. BM25 ignores the vector filter, so
+    // over-fetch its currently indexed scoped documents before post-filtering.
+    const scopedCount = this._searchEngine.countByPrefix(SKILL_SCOPE_DOCUMENT_PREFIX);
+    const topK = options?.topK ?? DEFAULT_SEARCH_TOP_K;
+    const unscopedFilter = { skillScope: { $exists: false } };
+    const filter = options?.filter ? { $and: [options.filter, unscopedFilter] } : unscopedFilter;
+    const results = await this._searchEngine.search(query, {
+      ...options,
+      topK: topK + scopedCount,
+      filter,
+    });
+    return results.filter(result => result.metadata?.skillScope === undefined).slice(0, topK);
   }
 
   /**
-   * Rebuild the search index from filesystem paths.
-   * Used internally for auto-indexing on init.
+   * Rebuild the search index from filesystem paths without starting the sandbox.
    *
-   * Paths can be plain directories, single files, or glob patterns.
-   * Uses resolvePathPattern for unified resolution: file matches are
-   * indexed directly, directory matches are recursed.
+   * Defaults to the configured `autoIndexPaths`, or accepts explicit paths for a
+   * one-off rebuild. Paths can be plain directories, single files, or glob patterns.
+   * Uses resolvePathPattern for unified resolution: file matches are indexed directly,
+   * and directory matches are recursed. Does nothing when search is not configured,
+   * the workspace has no static filesystem, or no paths are provided.
    */
-  private async rebuildSearchIndex(paths: string[]): Promise<void> {
+  async rebuildSearchIndex(paths: string[] = this._config.autoIndexPaths ?? []): Promise<void> {
     this.assertSearchWritable();
     if (!this._searchEngine || !this._fs || paths.length === 0) {
       return;
@@ -1121,9 +1183,10 @@ export class Workspace<
     }
 
     const fs = this._fs;
+    const { default: pMap, pMapSkip } = await import('p-map');
     return pMap(
       files,
-      async (filePath): Promise<{ filePath: string; docs: IndexDocument[] } | typeof pMapSkip> => {
+      async (filePath): Promise<{ filePath: string; docs: IndexDocument[] } | typeof import('p-map').pMapSkip> => {
         try {
           const content = (await fs.readFile(filePath, { encoding: 'utf-8' })) as string;
           const chunks = splitIntoChunks(content);
@@ -1138,7 +1201,7 @@ export class Workspace<
                 }));
           return { filePath, docs };
         } catch {
-          return pMapSkip;
+          return pMapSkip as typeof import('p-map').pMapSkip;
         }
       },
       { stopOnError: false, concurrency: FS_READ_CONCURRENCY },
@@ -1156,6 +1219,7 @@ export class Workspace<
     if (!engine) return [];
     try {
       const entries = await this.batchReadFiles(paths);
+      const pMap = (await import('p-map')).default;
       // Clear stale single-doc/chunked entries from previous indexing passes.
       await pMap(entries, ({ filePath }) => engine.removeSource(filePath), {
         concurrency: FS_READ_CONCURRENCY,
@@ -1302,6 +1366,64 @@ export class Workspace<
   }
 
   /**
+   * Stop the workspace's live resources without destroying them.
+   *
+   * Shuts down LSP clients, closes the browser, and stops the sandbox
+   * (`stop`, not `destroy` — remote providers pause/suspend so the sandbox
+   * can be resumed later; {@link LocalSandbox} kills its background
+   * processes). The workspace itself stays usable: filesystem, search index,
+   * and skills are untouched, and a later sandbox operation may start the
+   * sandbox again.
+   *
+   * This is what `Mastra.shutdown()` calls for registered workspaces, so a
+   * process restart suspends remote sandboxes instead of deleting them.
+   */
+  async stop(): Promise<void> {
+    if (this._teardownStarted || this._status === 'destroyed') {
+      return;
+    }
+    // Coalesce concurrent stop() calls onto one in-flight teardown, same as
+    // destroy() does with _destroyPromise.
+    if (this._stopPromise) {
+      return await this._stopPromise;
+    }
+
+    this._stopPromise = this._performStop();
+    try {
+      await this._stopPromise;
+    } finally {
+      this._stopPromise = undefined;
+    }
+  }
+
+  private async _performStop(): Promise<void> {
+    // Shutdown LSP before the sandbox — LSP clients need running processes
+    // to send shutdown/exit. The manager is kept: shutdownAll() drains its
+    // clients and resets it, so it spawns clients again on the next
+    // diagnostics request.
+    if (this._lsp) {
+      try {
+        await this._lsp.shutdownAll();
+      } catch {
+        // LSP shutdown errors are non-blocking
+      }
+    }
+
+    // Close browser before the sandbox
+    if (this._browser) {
+      try {
+        await this._browser.close();
+      } catch {
+        // Browser close errors are non-blocking
+      }
+    }
+
+    if (this._sandbox) {
+      await callLifecycle(this._sandbox, 'stop');
+    }
+  }
+
+  /**
    * Destroy the workspace and clean up all resources.
    */
   async destroy(): Promise<void> {
@@ -1314,7 +1436,18 @@ export class Workspace<
 
     this._teardownStarted = true;
     this._status = 'destroying';
-    this._destroyPromise = this._performDestroy();
+    // Assigned before any await so a concurrent destroy() during the
+    // stop-drain below joins this promise instead of starting a second
+    // destroy path.
+    this._destroyPromise = (async () => {
+      // Let an in-flight stop() settle before destructive cleanup so the two
+      // teardowns never interleave on the same LSP manager, browser, and
+      // sandbox.
+      if (this._stopPromise) {
+        await this._stopPromise.catch(() => {});
+      }
+      await this._performDestroy();
+    })();
 
     try {
       await this._destroyPromise;
@@ -1585,6 +1718,11 @@ export class Workspace<
    * Called by Mastra when the logger is set.
    * @internal
    */
+  /** Logger set by Mastra, if any. */
+  get logger(): IMastraLogger | undefined {
+    return this._logger;
+  }
+
   __setLogger(logger: IMastraLogger): void {
     this._logger = logger;
 

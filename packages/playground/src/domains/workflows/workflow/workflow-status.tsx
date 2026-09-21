@@ -1,11 +1,11 @@
 import { CodeEditor } from '@mastra/playground-ui/components/CodeEditor';
 import { Txt } from '@mastra/playground-ui/components/Txt';
+import { TripwireNotice } from '@mastra/playground-ui/domains/chat/messages/tripwire-notice';
 import { CheckIcon } from '@mastra/playground-ui/icons/CheckIcon';
 import { CrossIcon } from '@mastra/playground-ui/icons/CrossIcon';
 import { Icon } from '@mastra/playground-ui/icons/Icon';
 import { CirclePause, HourglassIcon, Loader2, ShieldAlert } from 'lucide-react';
 import { WorkflowCard } from './workflow-card';
-import { TripwireNotice } from '@/lib/ai-ui/messages/tripwire-notice';
 
 export interface TripwireInfo {
   reason?: string;
@@ -36,7 +36,7 @@ export const WorkflowStatus = ({ stepId, status, result, tripwire }: WorkflowSta
             {status === 'waiting' && <HourglassIcon className="text-accent5" />}
             {status === 'running' && <Loader2 className="text-accent6 animate-spin" />}
           </Icon>
-          <Txt as="span" variant="ui-lg" className="text-neutral6 font-medium">
+          <Txt as="span" variant="ui-lg" className="text-foreground font-medium">
             {stepId.charAt(0).toUpperCase() + stepId.slice(1)}
           </Txt>
         </div>

@@ -7,9 +7,9 @@ import path from 'node:path';
 import { readArtifactIndex, sha256 } from './lib.mjs';
 
 const EXPECTED_NODE = '22.23.1';
-const EXPECTED_PNPM = '11.13.1';
+const EXPECTED_PNPM = '11.21.0';
 const EXPECTED_PACKAGE_MANAGER =
-  'pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25';
+  'pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1';
 const AREA_IMPORTS = {
   studio: [],
   playground: ['@mastra/playground-ui/tokens'],

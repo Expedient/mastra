@@ -25,46 +25,166 @@
     "discoveredPathsSha256": "2bdb81ab29065501bb7a6df1101c0878856a487660c47cd87e2a3841d78d7ae6",
     "sha256": "97ebeb7d35a1aca29bd4e7b4ee99806b5f1198fda14ee98517594d4cacb998bf",
     "paths": [
-      { "connectionPointId": "CP-17", "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/auth0/src/index.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/better-auth/src/index.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/clerk/src/index.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/cloud/src/auth-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/cloud/src/rbac/rbac-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/google/src/rbac-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/neon/src/rbac-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/okta/src/rbac-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/studio/src/index.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/workos/src/auth-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/workos/src/fga-provider.ts" },
-      { "connectionPointId": "CP-11", "path": "auth/workos/src/rbac-provider.ts" },
-      { "connectionPointId": "CP-17", "path": "examples/agent-builder/src/mastra/index.ts" },
-      { "connectionPointId": "CP-17", "path": "templates/template-agent-builder/src/mastra/index.ts" },
-      { "connectionPointId": "CP-10", "path": "ee/LICENSE" },
-      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/package.json" },
-      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/src/ee/license.ts" },
-      { "connectionPointId": "CP-10", "path": "packages/_internals/auth/src/ee/telemetry.ts" },
-      { "connectionPointId": "CP-01", "path": "packages/playground-ui/package.json" },
-      { "connectionPointId": "CP-02", "path": "packages/playground-ui/vite.config.ts" },
-      { "connectionPointId": "CP-03", "path": "packages/playground/src/App.tsx" },
-      { "connectionPointId": "CP-04", "path": "packages/core/package.json" },
-      { "connectionPointId": "CP-05", "path": "packages/core/tsdown.config.ts" },
-      { "connectionPointId": "CP-06", "path": "packages/core/src/editor/types.ts" },
-      { "connectionPointId": "CP-07", "path": "packages/editor/package.json" },
-      { "connectionPointId": "CP-08", "path": "packages/editor/tsdown.config.ts" },
-      { "connectionPointId": "CP-09", "path": "packages/editor/src/index.ts" },
-      { "connectionPointId": "CP-12", "path": "packages/core/src/auth/ee/index.ts" },
-      { "connectionPointId": "CP-13", "path": "packages/core/tsdown.config.ts" },
-      { "connectionPointId": "CP-14", "path": "packages/core/src/workflows/workflow.ts" },
-      { "connectionPointId": "CP-14", "path": "packages/mcp/src/server/server.ts" },
-      { "connectionPointId": "CP-14", "path": "workflows/inngest/src/execution-engine.ts" },
-      { "connectionPointId": "CP-15", "path": "packages/server/src/server/auth/helpers.ts" },
-      { "connectionPointId": "CP-15", "path": "server-adapters/express/src/index.ts" },
-      { "connectionPointId": "CP-15", "path": "server-adapters/fastify/src/index.ts" },
-      { "connectionPointId": "CP-15", "path": "server-adapters/hono/src/index.ts" },
-      { "connectionPointId": "CP-15", "path": "server-adapters/koa/src/index.ts" },
-      { "connectionPointId": "CP-16", "path": "packages/server/src/server/handlers/editor-builder.ts" },
-      { "connectionPointId": "CP-16", "path": "packages/server/src/server/server-adapter/index.ts" }
+      {
+        "connectionPointId": "CP-17",
+        "path": ".claude/skills/builder-smoke-test/assets/template/src/mastra/index.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/auth0/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/better-auth/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/clerk/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/cloud/src/auth-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/cloud/src/rbac/rbac-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/google/src/rbac-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/neon/src/rbac-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/okta/src/rbac-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/studio/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/workos/src/auth-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/workos/src/fga-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-11",
+        "path": "auth/workos/src/rbac-provider.ts"
+      },
+      {
+        "connectionPointId": "CP-17",
+        "path": "examples/agent-builder/src/mastra/index.ts"
+      },
+      {
+        "connectionPointId": "CP-17",
+        "path": "templates/template-agent-builder/src/mastra/index.ts"
+      },
+      {
+        "connectionPointId": "CP-10",
+        "path": "ee/LICENSE"
+      },
+      {
+        "connectionPointId": "CP-10",
+        "path": "packages/_internals/auth/package.json"
+      },
+      {
+        "connectionPointId": "CP-10",
+        "path": "packages/_internals/auth/src/ee/license.ts"
+      },
+      {
+        "connectionPointId": "CP-10",
+        "path": "packages/_internals/auth/src/ee/telemetry.ts"
+      },
+      {
+        "connectionPointId": "CP-01",
+        "path": "packages/playground-ui/package.json"
+      },
+      {
+        "connectionPointId": "CP-02",
+        "path": "packages/playground-ui/vite.config.ts"
+      },
+      {
+        "connectionPointId": "CP-03",
+        "path": "packages/playground/src/App.tsx"
+      },
+      {
+        "connectionPointId": "CP-04",
+        "path": "packages/core/package.json"
+      },
+      {
+        "connectionPointId": "CP-05",
+        "path": "packages/core/tsdown.config.ts"
+      },
+      {
+        "connectionPointId": "CP-06",
+        "path": "packages/core/src/editor/types.ts"
+      },
+      {
+        "connectionPointId": "CP-07",
+        "path": "packages/editor/package.json"
+      },
+      {
+        "connectionPointId": "CP-08",
+        "path": "packages/editor/tsdown.config.ts"
+      },
+      {
+        "connectionPointId": "CP-09",
+        "path": "packages/editor/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-12",
+        "path": "packages/core/src/auth/ee/index.ts"
+      },
+      {
+        "connectionPointId": "CP-13",
+        "path": "packages/core/tsdown.config.ts"
+      },
+      {
+        "connectionPointId": "CP-14",
+        "path": "packages/core/src/workflows/workflow.ts"
+      },
+      {
+        "connectionPointId": "CP-14",
+        "path": "packages/mcp/src/server/server.ts"
+      },
+      {
+        "connectionPointId": "CP-14",
+        "path": "workflows/inngest/src/execution-engine.ts"
+      },
+      {
+        "connectionPointId": "CP-15",
+        "path": "packages/server/src/server/auth/helpers.ts"
+      },
+      {
+        "connectionPointId": "CP-15",
+        "path": "server-adapters/express/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-15",
+        "path": "server-adapters/fastify/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-15",
+        "path": "server-adapters/hono/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-15",
+        "path": "server-adapters/koa/src/index.ts"
+      },
+      {
+        "connectionPointId": "CP-16",
+        "path": "packages/server/src/server/handlers/editor-builder.ts"
+      },
+      {
+        "connectionPointId": "CP-16",
+        "path": "packages/server/src/server/server-adapter/index.ts"
+      }
     ]
   },
   "connectionPoints": [
@@ -85,7 +205,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground-ui/package.json",
-          "sha256": "14b96f225742a36823246f1eb2255959de257c8937a020aa7a9ba6e4539d88a4"
+          "sha256": "703fcda50f5734a71e134384e6ddd4b523beb0a2a5272e5d60e363ab111e325d"
         }
       ],
       "replacementRegressionCheck": "descendant and wildcard export scans reject restoration of @mastra/playground-ui/ee",
@@ -117,7 +237,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground-ui/vite.config.ts",
-          "sha256": "c97e7a592fc7f182bbb8eb87da5e0aec081c1e26d3bc4a4f7f15aa492e920418"
+          "sha256": "02da6291b7cde9ca0f451918084f59d31d074a74e39729b02e6276c7fc31afa5"
         }
       ],
       "replacementRegressionCheck": "generated path and final-byte scans reject EE UI entries",
@@ -149,11 +269,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground/src/App.tsx",
-          "sha256": "81f73d57fe7357faaea53f491c1c8da309a2d68c74452746dd4e29048150dfd2"
+          "sha256": "9d92d5e5a01935bedd971889c4e880b49d6c4ab5fc44d53fee25693b466d199c"
         },
         {
           "path": "packages/playground/src/lib/nav/nav-items.tsx",
-          "sha256": "7c4a0e771b004d7f03a1cc567a9059ebcfbc05474fb907eb06c7447f2bae108c"
+          "sha256": "7972d83f5de59f61cd713c42984d248635426741462ee1b5fd17a5c1c81a4b3b"
         }
       ],
       "replacementRegressionCheck": "active import, alias, source-path, and Playground fixture scans reject retired Signals wiring",
@@ -185,7 +305,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/package.json",
-          "sha256": "4a74cf45020fde58e40063c3699764a239fd075b315440ae87d71f3bd1dd111a"
+          "sha256": "53e30b052120482ffd93a0ca8e0ea75bad263a00c57871d1e974dde9aea1b985"
         },
         {
           "path": "packages/core/src/editor/index.ts",
@@ -221,7 +341,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/tsdown.config.ts",
-          "sha256": "a9796522b99f77610dfd990d81dbc8f31043179d209c7e8d1d0524f1af2a8df7"
+          "sha256": "ecf50edfba04c8c053b5bb70053ff4722ed165c7a5bc61d316fc9be874dc5e68"
         },
         {
           "path": "packages/core/src/editor/types.ts",
@@ -293,7 +413,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/editor/package.json",
-          "sha256": "cf5cb1ff6ab50a038ab946fbc1809b38b26a1fc4ec4d5c2ab37c91780e384e5d"
+          "sha256": "a53ed8e37331c9e2750e0ad06cb1a867ce36a6f0f42b30b6148ec62c10cf4951"
         },
         {
           "path": "packages/editor/src/index.ts",
@@ -425,11 +545,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/_internals/auth/package.json",
-          "sha256": "4437b8f940289744f93a3a948dae6320bde60854ac90da92fe0db91012aa3cb5"
+          "sha256": "fb03498750f91dbdb4bf29bf39043e4635b2f0dfb9b45eeffabdb3b955642a45"
         },
         {
           "path": "packages/_internals/auth/src/authorization.ts",
-          "sha256": "1d7e7481365b0e87d945842dfbfebda7fd49b9072ae9bb25157460963f12798a"
+          "sha256": "c6b5a95e2edbd2303cc328f877a73f63c2cc165fdef3f36397be62ede18a1467"
         }
       ],
       "replacementRegressionCheck": "source, bundle, license, and OS-level network gates reject the source-established EE boundary and behaviors",
@@ -497,11 +617,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/package.json",
-          "sha256": "4a74cf45020fde58e40063c3699764a239fd075b315440ae87d71f3bd1dd111a"
+          "sha256": "53e30b052120482ffd93a0ca8e0ea75bad263a00c57871d1e974dde9aea1b985"
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
-          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+          "sha256": "b8b81543b17cdedfc8c0f9c0e15ae7d2b66afbff0341947a79afbdd43cb1b9b0"
         }
       ],
       "replacementRegressionCheck": "graph rejects auth/ee descendants and exposes public auth/authorization",
@@ -533,11 +653,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/tsdown.config.ts",
-          "sha256": "a9796522b99f77610dfd990d81dbc8f31043179d209c7e8d1d0524f1af2a8df7"
+          "sha256": "ecf50edfba04c8c053b5bb70053ff4722ed165c7a5bc61d316fc9be874dc5e68"
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
-          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+          "sha256": "b8b81543b17cdedfc8c0f9c0e15ae7d2b66afbff0341947a79afbdd43cb1b9b0"
         }
       ],
       "replacementRegressionCheck": "actual tsdown entry fingerprint, generated path scan, and archive scan reject auth EE bundles",
@@ -569,7 +689,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/src/workflows/workflow.ts",
-          "sha256": "e8ffe7b3a608c45f292adb0730fc0b5e10bde8582380a2e2109cac99448309e5"
+          "sha256": "69109ad00ff12507a49b41ece4511b7dc92e9e5438a1820e5ce24f4756dde9a0"
         },
         {
           "path": "packages/core/src/auth/authorization.test.ts",
@@ -605,11 +725,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/server/src/server/auth/helpers.ts",
-          "sha256": "7c23f9b968f563c0be7ee52a73f30876f70a1b3038ddd96c33d5b47a73d57cf6"
+          "sha256": "a5f60dbb88bfee3bdee370e024786e877975c37393637c95533cfa421c187edb"
         },
         {
           "path": "packages/server/src/server/handlers/auth.test.ts",
-          "sha256": "c69f535d38c118485a3ab1f972e69dee84921bdadb2f5431d745356680e7b2c0"
+          "sha256": "c326bf62698726f0391485f35503490d5091519686115131388771a27c5a37d3"
         }
       ],
       "replacementRegressionCheck": "grouped server import inventory and auth handler tests preserve public authorization",

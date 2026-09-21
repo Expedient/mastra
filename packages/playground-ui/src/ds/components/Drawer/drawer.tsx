@@ -35,8 +35,8 @@ const drawerViewportVariants = cva('fixed z-50 flex', {
     },
     layout: {
       default: 'inset-0',
-      floating: 'p-3 sm:p-4',
-      floatingOverlay: 'inset-0 p-3 sm:p-4',
+      floating: 'p-2 sm:p-3',
+      floatingOverlay: 'inset-0 p-2 sm:p-3',
     },
   },
   compoundVariants: [
@@ -71,7 +71,7 @@ const drawerViewportVariants = cva('fixed z-50 flex', {
 const drawerPopupVariants = cva(
   cn(
     'drawer-popup group/popup relative z-50 box-border flex [touch-action:auto] flex-col overflow-y-auto overscroll-contain will-change-transform outline-none',
-    'border-border1 bg-surface3 text-neutral5 shadow-dialog',
+    'border-border1 bg-surface3 text-foreground shadow-dialog',
     'data-[swiping]:select-none',
     "after:pointer-events-none after:absolute after:inset-0 after:bg-transparent after:transition-[background-color] after:duration-[450ms] after:content-['']",
     'data-[nested-drawer-open]:after:bg-black/25',
@@ -431,7 +431,7 @@ DrawerDefaultCloseButton.displayName = 'DrawerDefaultCloseButton';
 const DrawerHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     data-slot="drawer-header"
-    className={cn('flex flex-col gap-0.5 px-4 py-3 pr-12 text-left', className)}
+    className={cn('flex flex-col gap-0.5 px-3 py-2.5 pr-12 text-left', className)}
     {...props}
   />
 );
@@ -440,14 +440,14 @@ DrawerHeader.displayName = 'DrawerHeader';
 const DrawerFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     data-slot="drawer-footer"
-    className={cn('mt-auto flex flex-col-reverse gap-1.5 px-4 py-3 sm:flex-row sm:justify-end', className)}
+    className={cn('mt-auto flex flex-col-reverse gap-1.5 px-3 py-2.5 sm:flex-row sm:justify-end', className)}
     {...props}
   />
 );
 DrawerFooter.displayName = 'DrawerFooter';
 
 const DrawerBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div data-slot="drawer-body" className={cn('flex-1 px-4 py-3', className)} {...props} />
+  <div data-slot="drawer-body" className={cn('flex-1 px-3 py-2.5', className)} {...props} />
 );
 DrawerBody.displayName = 'DrawerBody';
 
@@ -456,7 +456,7 @@ type DrawerTitleProps = Omit<DrawerPrimitive.Title.Props, 'className'> & {
 };
 
 const DrawerTitle = React.forwardRef<HTMLHeadingElement, DrawerTitleProps>(({ className, ...props }, ref) => (
-  <DrawerPrimitive.Title ref={ref} className={cn('text-ui-md font-medium text-neutral6', className)} {...props} />
+  <DrawerPrimitive.Title ref={ref} className={cn('text-ui-md font-medium text-foreground', className)} {...props} />
 ));
 DrawerTitle.displayName = 'DrawerTitle';
 
@@ -466,7 +466,7 @@ type DrawerDescriptionProps = Omit<DrawerPrimitive.Description.Props, 'className
 
 const DrawerDescription = React.forwardRef<HTMLParagraphElement, DrawerDescriptionProps>(
   ({ className, ...props }, ref) => (
-    <DrawerPrimitive.Description ref={ref} className={cn('text-ui-sm text-neutral3', className)} {...props} />
+    <DrawerPrimitive.Description ref={ref} className={cn('text-ui-sm text-muted-foreground', className)} {...props} />
   ),
 );
 DrawerDescription.displayName = 'DrawerDescription';

@@ -1,5 +1,7 @@
 import type { AgentScorerConfig, WorkflowScorerConfig } from '../../evals';
 import type { MastraScorer, ScorerStepName } from '../../evals/base';
+import type { NotScorableOutcome } from '../../evals/not-scorable';
+import type { TrajectoryExpectation } from '../../evals/types';
 import type { Mastra } from '../../mastra';
 import type { VersionOverrides } from '../../mastra/types';
 import type {
@@ -23,6 +25,8 @@ export interface DataItem<I = unknown, E = unknown> {
   input: I;
   /** Ground truth for scoring */
   groundTruth?: E;
+  /** Expected trajectory forwarded to trajectory scorers as `run.expectedTrajectory` */
+  expectedTrajectory?: TrajectoryExpectation;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
   /** Per-item request context merged over the global request context (item takes precedence) */
@@ -305,6 +309,8 @@ export interface ItemResult {
   output: unknown | null;
   /** Expected output from the dataset item */
   groundTruth: unknown | null;
+  /** Metadata from the dataset item when it was executed */
+  metadata?: Record<string, unknown>;
   /** Structured error if execution failed */
   error: { message: string; stack?: string; code?: string } | null;
   /** When execution started */
@@ -345,6 +351,12 @@ export interface ScorerResult {
   reason: string | null;
   /** Error message if scorer failed */
   error: string | null;
+  /**
+   * Set when the scorer declared the item not scorable via `notScorable()`.
+   * `score` is `null` and `error` is `null`: this is neither a score nor a
+   * failure, and the item is left out of the scorer's aggregates.
+   */
+  notScorable?: NotScorableOutcome;
   /** Scorer stage that failed, when the scorer exposes stage context */
   failedStep?: ScorerStepName;
   /** Scorer stages that completed before the failure */

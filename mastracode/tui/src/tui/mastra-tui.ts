@@ -6,6 +6,9 @@ import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Component } from '@earendil-works/pi-tui';
+import type { BackgroundCompletionEvent } from '@mastra/code-sdk/agents/background-completion-events';
+import { PACK_FALLBACK_STATE_KEY } from '@mastra/code-sdk/auth/account-rotation-processor';
+import type { PendingPackFallback } from '@mastra/code-sdk/auth/account-rotation-processor';
 import { getOAuthProviders } from '@mastra/code-sdk/auth/storage';
 import {
   getAvailableModePacks,
@@ -19,6 +22,7 @@ import type { ProviderAccess, ProviderAccessLevel } from '@mastra/code-sdk/onboa
 import {
   resolveThreadActiveModelPackId,
   THREAD_ACTIVE_MODEL_PACK_ID_KEY,
+  THREAD_FALLBACK_STATUS_KEY,
   MASTRA_GATEWAY_PROVIDER,
 } from '@mastra/code-sdk/onboarding/settings';
 import type { LoadedPlugin } from '@mastra/code-sdk/plugins/types';
@@ -29,15 +33,23 @@ import {
   isNewerVersion,
   performUpdate,
 } from '@mastra/code-sdk/utils/update-check';
-import type { AgentSignalAttributes } from '@mastra/core/agent';
 import type { AgentControllerEvent, MastraDBMessage } from '@mastra/core/agent-controller';
 import type { Workspace } from '@mastra/core/workspace';
+import { disposeAssistantRenderState } from './assistant-render-registry.js';
+import {
+  clearCompletedBackgroundActivitiesForTarget,
+  compareBackgroundActivities,
+  completeBackgroundActivity,
+  getBackgroundActivitiesForTarget,
+} from './background-activity.js';
+import type { BackgroundActivity } from './background-activity.js';
 import { insertChatComponentWithBoundarySpacing } from './chat-boundary-reconciliation.js';
 import { dispatchSlashCommand } from './command-dispatch.js';
 import { startGoalWithDefaults } from './commands/goal.js';
 
 import type { SlashCommandContext } from './commands/types.js';
 import { AskQuestionInlineComponent } from './components/ask-question-inline.js';
+import { BackgroundActivitySelectorComponent } from './components/background-activity-selector.js';
 import { LoginDialogComponent } from './components/login-dialog.js';
 import { promptAuthMode } from './components/login-mode-selector.js';
 import { ModelSelectorComponent } from './components/model-selector.js';
@@ -46,6 +58,7 @@ import { GradientAnimator } from './components/obi-loader.js';
 import type { IToolExecutionComponent } from './components/tool-execution-interface.js';
 import { showError, showInfo, showFormattedError, notify } from './display.js';
 import { dispatchEvent } from './event-dispatch.js';
+import { renderStatusAnimationFrame } from './footer-animation-renderer.js';
 import { isGoalJudgeInputLocked, showGoalJudgeInputLockInfo } from './goal-input-lock.js';
 import type { EventHandlerContext } from './handlers/types.js';
 import { askModalQuestion } from './modal-question.js';
@@ -73,7 +86,6 @@ import {
   refreshSkillsAutocomplete,
   setupKeyHandlers,
   subscribeToAgentController,
-  updateTerminalTitle,
   promptForThreadSelection,
   renderExistingTasks,
 } from './setup.js';
@@ -81,6 +93,7 @@ import { handleShellPassthrough } from './shell.js';
 import type { MastraTUIOptions, TUIState } from './state.js';
 import { createTUIState, getGithubPrSubscriptionsFromMetadata } from './state.js';
 import { updateStatusLine } from './status-line.js';
+import { setCurrentThreadTitle } from './thread-title.js';
 
 // =============================================================================
 // Types
@@ -92,21 +105,8 @@ export type { MastraTUIOptions } from './state.js';
 // MastraTUI Class
 // =============================================================================
 
-/**
- * Delivery option attributes applied to user-message signals. When the signal is delivered to an
- * active run it is tagged as while-active; when it starts a new run it is a message.
- * The LLM sees these as XML attributes on the `<user-message>` element.
- */
 type GithubPollingChangedHandler = (event: { threadId: string; resourceId: string; running: boolean }) => void;
 type GithubSignalsWithPollingEvents = { onPollingChanged?: (handler: GithubPollingChangedHandler) => void };
-
-const USER_SIGNAL_DELIVERY_OPTIONS: {
-  ifActive: { attributes: AgentSignalAttributes };
-  ifIdle: { attributes: AgentSignalAttributes };
-} = {
-  ifActive: { attributes: { delivery: 'while-active' } },
-  ifIdle: { attributes: { delivery: 'message' } },
-};
 
 const USER_MESSAGE_APPROVAL_INTERRUPT = {
   reason: 'interrupted_by_user_message',
@@ -118,20 +118,67 @@ const UPDATE_RECHECK_INTERVAL_MS = 45 * 60 * 1_000; // 45 minutes
 const IMAGE_PLACEHOLDER_PATTERN = /\[image\]\s*/g;
 const CAFFEINATE_ARGS = ['-i', '-m'];
 
+function fallbackStatusFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): { usingPack: string; failedPack: string } | undefined {
+  const persisted = metadata?.[THREAD_FALLBACK_STATUS_KEY];
+  if (
+    persisted &&
+    typeof persisted === 'object' &&
+    typeof (persisted as Record<string, unknown>).usingPack === 'string' &&
+    typeof (persisted as Record<string, unknown>).failedPack === 'string'
+  ) {
+    return persisted as { usingPack: string; failedPack: string };
+  }
+  return undefined;
+}
+
 export async function syncInitialThreadState(state: TUIState): Promise<void> {
   const initThreadId = state.session.thread.getId();
-  if (!initThreadId) return;
+  if (!initThreadId) {
+    setCurrentThreadTitle(state, undefined);
+    state.fallbackStatus = undefined;
+    return;
+  }
 
   const initThreads = await state.session.thread.list();
+  if (state.session.thread.getId() !== initThreadId) return;
+
   const initThread = initThreads.find(t => t.id === initThreadId);
-  if (initThread?.title) {
-    state.currentThreadTitle = initThread.title;
-  }
   const metadata = initThread?.metadata as Record<string, unknown> | undefined;
+  const persistedFallbackStatus = fallbackStatusFromMetadata(metadata);
+  const pendingFallback = metadata?.[PACK_FALLBACK_STATE_KEY] as Partial<PendingPackFallback> | null | undefined;
+  const validPendingFallback =
+    pendingFallback &&
+    typeof pendingFallback === 'object' &&
+    typeof pendingFallback.fromPackId === 'string' &&
+    typeof pendingFallback.toPackId === 'string' &&
+    typeof pendingFallback.toModelId === 'string' &&
+    (pendingFallback.reason === 'pool-exhausted' || pendingFallback.reason === 'persistent-outage') &&
+    typeof pendingFallback.at === 'string'
+      ? (pendingFallback as PendingPackFallback)
+      : null;
+  const currentState = state.session.state?.get?.() as Record<string, unknown> | undefined;
+  const currentPending = currentState?.[PACK_FALLBACK_STATE_KEY];
+  if (validPendingFallback || currentPending) {
+    const updates = {
+      [PACK_FALLBACK_STATE_KEY]: validPendingFallback,
+    };
+    const applied = state.session.state.setIf
+      ? await state.session.state.setIf(updates, () => state.session.thread.getId() === initThreadId)
+      : state.session.thread.getId() === initThreadId
+        ? await state.session.state.set(updates).then(() => true)
+        : false;
+    if (!applied || state.session.thread.getId() !== initThreadId) return;
+  }
+
+  setCurrentThreadTitle(state, initThread?.title);
+  state.fallbackStatus = persistedFallbackStatus;
   state.activeGithubPrSubscriptions = getGithubPrSubscriptionsFromMetadata(metadata);
   // Prefer the durable ThreadState objective; fall back to the legacy
   // thread-metadata goal for threads created before the migration.
   await state.goalManager.loadFromThread(state);
+  if (state.session.thread.getId() !== initThreadId) return;
   if (!state.goalManager.getGoal()) {
     state.goalManager.loadFromThreadMetadata(metadata);
   }
@@ -163,7 +210,18 @@ export class MastraTUI {
   private cleanupKeyHandlers?: () => void;
   private cleanupPluginReloadListener?: () => void;
   private cleanupPluginUpdateListener?: () => void;
+  private cleanupBackgroundCompletionListener?: () => void;
+  private backgroundNoticeQueue = Promise.resolve();
   private lastStreamError: string | null = null;
+  private stopped = false;
+  /**
+   * Text submitted while the main loop was busy (running a slash command or a
+   * shell passthrough) and so was not waiting on `getUserInput`. The editor's
+   * submit handler stays installed across loop iterations, so without this the
+   * submission would resolve an already-settled promise and be silently lost.
+   */
+  private queuedUserInput: string[] = [];
+  private pendingUserInputResolve: ((text: string) => void) | undefined;
 
   private static readonly DOUBLE_CTRL_C_MS = 500;
 
@@ -192,8 +250,7 @@ export class MastraTUI {
       if (event.threadId !== currentThreadId || (currentResourceId && event.resourceId !== currentResourceId)) return;
       if (!this.state.githubPrGradientAnimator) {
         this.state.githubPrGradientAnimator = new GradientAnimator(() => {
-          updateStatusLine(this.state);
-          requestRender(this.state);
+          renderStatusAnimationFrame(this.state, () => updateStatusLine(this.state));
         });
       }
       this.state.githubPrPollingActive = event.running;
@@ -256,9 +313,82 @@ export class MastraTUI {
 
     setupKeyboardShortcuts(this.state, {
       stop: () => this.stop(),
+      exit: exitCode => this.exit(exitCode),
       doubleCtrlCMs: MastraTUI.DOUBLE_CTRL_C_MS,
       queueFollowUpMessage: text => this.queueFollowUpMessage(text),
+      ...(this.state.options.backgroundToolsEnabled
+        ? {
+            openBackgroundActivityCenter: () => this.showBackgroundActivityCenter(),
+            clearFinishedBackgroundActivities: () => this.clearFinishedBackgroundActivity(),
+          }
+        : {}),
     });
+  }
+
+  private getCurrentThreadBackgroundActivities(): BackgroundActivity[] {
+    return getBackgroundActivitiesForTarget(
+      this.state.backgroundActivities,
+      this.state.session.identity.getResourceId(),
+      this.state.pendingNewThread ? null : this.state.session.thread.getId(),
+    );
+  }
+
+  private refreshBackgroundActivity(): void {
+    if (!this.state.options.backgroundToolsEnabled) return;
+    this.state.globalBackgroundNotice.setActivities(this.getCurrentThreadBackgroundActivities());
+    flushRender(this.state);
+  }
+
+  private clearFinishedBackgroundActivity(): void {
+    clearCompletedBackgroundActivitiesForTarget(
+      this.state.backgroundActivities,
+      this.state.session.identity.getResourceId(),
+      this.state.pendingNewThread ? null : this.state.session.thread.getId(),
+    );
+    this.refreshBackgroundActivity();
+  }
+
+  private showBackgroundActivityCenter(): void {
+    const activities = this.getCurrentThreadBackgroundActivities().sort(compareBackgroundActivities);
+    if (activities.length === 0) return;
+
+    const selector = new BackgroundActivitySelectorComponent({
+      tui: this.state.ui,
+      activities,
+      getActivity: taskId => this.state.backgroundActivities.get(taskId),
+      onCancel: () => this.state.ui.hideOverlay(),
+      onAbort: activity => void this.abortBackgroundActivity(activity),
+    });
+    showModalOverlay(this.state.ui, selector, { maxHeight: '80%' });
+    selector.focused = true;
+  }
+
+  private async abortBackgroundActivity(activity: BackgroundActivity): Promise<void> {
+    try {
+      const manager = this.state.controller.getMastra()?.backgroundTaskManager;
+      if (!manager) return;
+      await manager.cancel(activity.taskId);
+    } catch (error) {
+      showError(this.state, error instanceof Error ? error.message : 'Failed to cancel background task');
+    } finally {
+      this.state.ui.hideOverlay();
+    }
+  }
+
+  private handleBackgroundCompletion(event: BackgroundCompletionEvent): void {
+    this.backgroundNoticeQueue = this.backgroundNoticeQueue
+      .then(() => {
+        completeBackgroundActivity(this.state.backgroundActivities, event);
+        this.refreshBackgroundActivity();
+      })
+      .catch(error => {
+        showError(this.state, error instanceof Error ? error.message : 'Failed to refresh background activity');
+      });
+  }
+
+  private exit(exitCode: number): void {
+    if (this.state.options.exit) this.state.options.exit(exitCode);
+    else process.exit(exitCode);
   }
 
   // ===========================================================================
@@ -283,7 +413,7 @@ export class MastraTUI {
       const msg = this.state.options.initialMessage;
 
       if (!this.state.session.model.hasSelection()) {
-        showInfo(this.state, 'No model selected. Use /models to select a model, or /login to authenticate.');
+        showInfo(this.state, 'No model selected. Use /model to select a model, or /connect to authenticate.');
       } else {
         const messageId = `user-${Date.now()}`;
         addUserMessage(this.state, {
@@ -341,7 +471,7 @@ export class MastraTUI {
 
         // Check if a model is selected (sync — fast, no reason to defer)
         if (!this.state.session.model.hasSelection()) {
-          showInfo(this.state, 'No model selected. Use /models to select a model, or /login to authenticate.');
+          showInfo(this.state, 'No model selected. Use /model to select a model, or /connect to authenticate.');
           continue;
         }
 
@@ -453,7 +583,6 @@ export class MastraTUI {
 
       const signal = this.state.session.sendSignal({
         content: this.createUserSignalContent(content, images),
-        ...USER_SIGNAL_DELIVERY_OPTIONS,
       });
       this.remapOptimisticUserMessage(optimisticMessageId, signal.id);
       signal.accepted.catch((error: unknown) => {
@@ -485,7 +614,6 @@ export class MastraTUI {
 
       const signal = this.state.session.sendSignal({
         content: this.createUserSignalContent(content, images),
-        ...USER_SIGNAL_DELIVERY_OPTIONS,
       });
 
       if (hasActiveRun) {
@@ -539,6 +667,8 @@ export class MastraTUI {
    * Stop the TUI and clean up.
    */
   stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
     this.stopCaffeinate();
 
     // Run SessionEnd hooks (best-effort, don't await)
@@ -553,6 +683,9 @@ export class MastraTUI {
     }
 
     this.clearStatusTimingTicker();
+
+    this.state.footerAnimationRenderer?.dispose();
+    this.state.footerAnimationRenderer = undefined;
 
     if (this.cleanupKeyHandlers) {
       this.cleanupKeyHandlers();
@@ -569,10 +702,16 @@ export class MastraTUI {
       this.cleanupPluginUpdateListener = undefined;
     }
 
+    if (this.cleanupBackgroundCompletionListener) {
+      this.cleanupBackgroundCompletionListener();
+      this.cleanupBackgroundCompletionListener = undefined;
+    }
+
     if (this.state.unsubscribe) {
       this.state.unsubscribe();
     }
     this.state.renderScheduler?.dispose();
+    disposeAssistantRenderState(this.state);
     this.state.ui.stop();
   }
 
@@ -631,6 +770,7 @@ export class MastraTUI {
     // Setup key handlers
     this.cleanupKeyHandlers = setupKeyHandlers(this.state, {
       stop: () => this.stop(),
+      exit: exitCode => this.exit(exitCode),
       doubleCtrlCMs: MastraTUI.DOUBLE_CTRL_C_MS,
     });
 
@@ -642,6 +782,11 @@ export class MastraTUI {
 
     // Subscribe to controller events
     subscribeToAgentController(this.state, event => this.handleEvent(event));
+    if (this.state.options.backgroundToolsEnabled) {
+      this.cleanupBackgroundCompletionListener = this.state.options.backgroundCompletionEvents?.subscribe(event =>
+        this.handleBackgroundCompletion(event),
+      );
+    }
     // Restore escape-as-cancel setting from persisted state
     const escState = this.state.session.state.get() as any;
     if (escState?.escapeAsCancel === false) {
@@ -680,8 +825,6 @@ export class MastraTUI {
         });
     }
 
-    // Set terminal title
-    updateTerminalTitle(this.state);
     // Render existing messages
     await this.renderExistingMessagesAndSeedIdleCounter();
     // Render existing tasks if any
@@ -805,6 +948,7 @@ export class MastraTUI {
       if (event.type === 'thread_created') {
         await this.syncThreadActivePackMetadata(event.thread);
       } else if (event.type === 'thread_changed') {
+        this.refreshBackgroundActivity();
         await this.syncThreadActivePackMetadata();
       }
 
@@ -993,20 +1137,21 @@ export class MastraTUI {
         : (await this.state.session.thread.list()).find(t => t.id === currentThreadId);
     const access = await this.buildProviderAccess();
     const packs = getAvailableModePacks(access, settings.customModelPacks).filter(p => p.id !== 'custom');
-    const resolvedPackId = resolveThreadActiveModelPackId(
-      settings,
-      packs,
-      resolvedThread?.metadata as Record<string, unknown> | undefined,
-    );
-
-    if (resolvedPackId && settings.models.activeModelPackId !== resolvedPackId) {
-      // Re-read settings to avoid overwriting concurrent changes
-      const fresh = loadSettings();
-      if (fresh.models.activeModelPackId !== resolvedPackId) {
-        fresh.models.activeModelPackId = resolvedPackId;
-        saveSettings(fresh);
-      }
-    }
+    const metadata = resolvedThread?.metadata as Record<string, unknown> | undefined;
+    if (this.state.session.thread.getId() !== currentThreadId) return;
+    const resolvedPackId = resolveThreadActiveModelPackId(settings, packs, metadata);
+    const fallbackStatus = fallbackStatusFromMetadata(metadata);
+    const updates = {
+      activeModelPackId: resolvedPackId,
+    };
+    const applied = this.state.session.state.setIf
+      ? await this.state.session.state.setIf(updates, () => this.state.session.thread.getId() === currentThreadId)
+      : this.state.session.thread.getId() === currentThreadId
+        ? (await this.state.session.state.set(updates), true)
+        : false;
+    if (!applied || this.state.session.thread.getId() !== currentThreadId) return;
+    this.state.fallbackStatus = fallbackStatus;
+    updateStatusLine(this.state);
   }
 
   private showHookWarnings(event: string, warnings: string[]): void {
@@ -1018,8 +1163,12 @@ export class MastraTUI {
   private beginLifecycleRun(): void {
     const hookMgr = this.state.hookManager;
     if (!hookMgr) return;
-    const runId = randomUUID();
-    hookMgr.setRunId(runId);
+    // Reuse a run id set at receipt time (runPermissionHooksForEvent) so the
+    // PermissionRequest hook fired before the queued agent_start carries the
+    // same id as subsequent hooks in this run.
+    if (!hookMgr.getRunId()) {
+      hookMgr.setRunId(randomUUID());
+    }
     hookMgr.runAgentStart().catch(() => {});
   }
 
@@ -1122,7 +1271,12 @@ export class MastraTUI {
   // ===========================================================================
 
   private getUserInput(): Promise<string> {
+    const queued = this.queuedUserInput.shift();
+    if (queued !== undefined) {
+      return Promise.resolve(queued);
+    }
     return new Promise(resolve => {
+      this.pendingUserInputResolve = resolve;
       this.state.editor.onSubmit = (text: string) => {
         if (isGoalJudgeInputLocked(this.state)) {
           this.state.editor.setText(text);
@@ -1168,7 +1322,14 @@ export class MastraTUI {
           return;
         }
 
-        resolve(text);
+        const pending = this.pendingUserInputResolve;
+        if (!pending) {
+          // The loop is busy elsewhere; hand the text over on its next turn.
+          this.queuedUserInput.push(text);
+          return;
+        }
+        this.pendingUserInputResolve = undefined;
+        pending(text);
       };
     });
   }
@@ -1202,11 +1363,14 @@ export class MastraTUI {
       pluginManager: this.state.pluginManager,
       analytics: this.state.analytics,
       authStorage: this.state.authStorage,
+      processMemoryDiagnostics: this.state.options.processMemoryDiagnostics,
+      knowledgeInspector: this.state.options.knowledgeInspector,
       customSlashCommands: this.state.customSlashCommands,
       showInfo: msg => showInfo(this.state, msg),
       showError: msg => showError(this.state, msg),
       updateStatusLine: () => updateStatusLine(this.state),
       stop: () => this.stop(),
+      exit: exitCode => this.exit(exitCode),
       getResolvedWorkspace: () => this.getResolvedWorkspace(),
       addUserMessage: msg => addUserMessage(this.state, msg),
       renderExistingMessages: () => this.renderExistingMessagesAndSeedIdleCounter(),
@@ -1227,8 +1391,8 @@ export class MastraTUI {
       addUserMessage: msg => addUserMessage(this.state, msg),
       addChildBeforeFollowUps: child => this.addChildBeforeFollowUps(child),
       fireMessage: (content, images) => this.fireMessage(content, images),
-      startGoal: (objective, cancelMessage, options) =>
-        startGoalWithDefaults(this.buildCommandContext(), objective, cancelMessage, options),
+      startGoal: (objective, cancelMessage) =>
+        startGoalWithDefaults(this.buildCommandContext(), objective, cancelMessage),
       queueFollowUpMessage: content => this.queueFollowUpMessage(content),
       renderExistingMessages: () => this.renderExistingMessagesAndSeedIdleCounter(),
       renderClearedTasksInline: (clearedTasks, insertIndex) =>
@@ -1495,7 +1659,16 @@ export class MastraTUI {
     settings.models.activeModelPackId = activeModePackId;
     if (this.state.session.thread.getId()) {
       await this.state.session.thread.setSetting({ key: THREAD_ACTIVE_MODEL_PACK_ID_KEY, value: activeModePackId });
+      // Selecting a pack here is a deliberate choice, not a fallback landing:
+      // a status restored from a previous run on this thread would otherwise
+      // keep claiming the thread is on a fallback pack.
+      await this.state.session.thread.setSetting({ key: THREAD_FALLBACK_STATUS_KEY, value: undefined });
     }
+    await this.state.session.state.set({ activeModelPackId: activeModePackId, fallbackStatus: undefined });
+    // The status line reads the TUI's own field, not the controller session
+    // state — clearing only the latter would leave "Using fallback …" on screen
+    // until the next thread sync.
+    this.state.fallbackStatus = undefined;
 
     settings.models.activeOmPackId = omPack?.id ?? null;
     settings.models.omModelOverride = omPack?.id === 'custom' ? omPack.modelId : null;
@@ -1692,7 +1865,7 @@ export class MastraTUI {
         // Printed after TUI teardown — a message rendered inside it is lost in the exit race.
         this.stop();
         console.info(outcome.message);
-        process.exit(0);
+        this.exit(0);
       } else {
         showError(this.state, outcome.message);
       }

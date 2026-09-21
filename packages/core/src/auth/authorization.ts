@@ -45,6 +45,8 @@ export type ActorSignal =
       agentId?: string;
       permissions?: MastraFGAPermissionInput[];
       scope?: Record<string, string>;
+      /** Opt-in inheritance of this actor into nested agent/tool calls. */
+      propagate?: boolean;
     };
 
 export interface EEUser extends User {

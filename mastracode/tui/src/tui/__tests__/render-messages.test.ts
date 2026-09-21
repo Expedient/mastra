@@ -3,6 +3,7 @@ import type { MastraDBMessage } from '@mastra/core/agent-controller';
 import { createSignal } from '@mastra/core/signals';
 import { describe, expect, it, vi } from 'vitest';
 
+import { AssistantRenderRegistry } from '../assistant-render-registry.js';
 import { AssistantMessageComponent } from '../components/assistant-message.js';
 import { isChatBoundarySpacer } from '../components/chat-boundary-spacer.js';
 import { JudgeDisplayComponent } from '../components/judge-display.js';
@@ -12,6 +13,7 @@ import { ReactiveSignalComponent } from '../components/reactive-signal.js';
 import { SlashCommandComponent } from '../components/slash-command.js';
 import { StateSignalComponent } from '../components/state-signal.js';
 import { SubagentExecutionComponent } from '../components/subagent-execution.js';
+import { SubconsciousActivityComponent } from '../components/subconscious-activity.js';
 import { TemporalGapComponent } from '../components/temporal-gap.js';
 import { UserMessageComponent } from '../components/user-message.js';
 import { addPendingUserMessage, addUserMessage, renderExistingMessages } from '../render-messages.js';
@@ -19,6 +21,7 @@ import type { TUIState } from '../state.js';
 
 function createState(): TUIState {
   return {
+    options: {},
     chatContainer: new Container(),
     ui: { requestRender: vi.fn() },
     toolOutputExpanded: false,
@@ -26,8 +29,12 @@ function createState(): TUIState {
     allSlashCommandComponents: [],
     allToolComponents: [],
     pendingTools: new Map(),
+    pendingTaskToolIds: new Set(),
     pendingSubagents: new Map(),
+    pendingAskUserComponents: new Map(),
+    pendingSubmitPlanComponents: new Map(),
     allShellComponents: [],
+    assistantRenderRegistry: new AssistantRenderRegistry(),
     messageComponentsById: new Map(),
     pendingSignalMessageComponentsById: new Map(),
     followUpComponents: [],
@@ -87,7 +94,7 @@ function createReminderMessage(reminder: ReminderInput, id = '__temporal_1'): Ma
 }
 
 function createStateSignalMessage(
-  input: { stateId: string; mode: string; version: number; message: string },
+  input: { stateId: string; mode: string; version: number; message: string; value?: unknown; delta?: unknown },
   id: string,
 ): MastraDBMessage {
   return createSignal({
@@ -95,7 +102,11 @@ function createStateSignalMessage(
     type: 'state',
     tagName: input.stateId,
     contents: input.message,
-    metadata: { state: { id: input.stateId, mode: input.mode, version: input.version } },
+    metadata: {
+      state: { id: input.stateId, mode: input.mode, version: input.version },
+      ...(input.value !== undefined ? { value: input.value } : {}),
+      ...(input.delta !== undefined ? { delta: input.delta } : {}),
+    },
   } as Parameters<typeof createSignal>[0]).toDBMessage();
 }
 
@@ -242,6 +253,56 @@ describe('addUserMessage', () => {
     expect(state.messageComponentsById.get('state-signal-1')).toBeInstanceOf(StateSignalComponent);
   });
 
+  it('renders valid Subconscious activity values with the specialized component', () => {
+    const state = createState();
+    addUserMessage(
+      state,
+      createStateSignalMessage(
+        {
+          stateId: 'subconscious-activity',
+          mode: 'snapshot',
+          version: 1,
+          message: 'Hot: [[Atlas launch]] (1)',
+          value: {
+            updates: [
+              {
+                action: 'record-created',
+                type: 'record',
+                name: 'Atlas launch',
+                createdAt: '2026-07-15T00:00:00.000Z',
+              },
+            ],
+            hot: [{ type: 'node', name: 'Atlas launch', updates: 1 }],
+          },
+        },
+        'subconscious-activity-1',
+      ),
+    );
+
+    expect(state.messageComponentsById.get('subconscious-activity-1')).toBeInstanceOf(SubconsciousActivityComponent);
+  });
+
+  it('falls back to generic state rendering for malformed Subconscious activity values', () => {
+    const state = createState();
+    addUserMessage(
+      state,
+      createStateSignalMessage(
+        {
+          stateId: 'subconscious-activity',
+          mode: 'snapshot',
+          version: 1,
+          message: 'Malformed activity remains visible',
+          value: { updates: 'invalid', hot: [] },
+        },
+        'subconscious-activity-invalid',
+      ),
+    );
+
+    const component = state.messageComponentsById.get('subconscious-activity-invalid');
+    expect(component).toBeInstanceOf(StateSignalComponent);
+    expect(component?.render(80).join('\n')).toContain('Malformed activity remains visible');
+  });
+
   it('does not render the tasks state signal inline (the pinned task UI shows it)', () => {
     const state = createState();
 
@@ -351,6 +412,147 @@ describe('addUserMessage', () => {
     expect(state.messageComponentsById.get('notification-1')).toBeInstanceOf(NotificationComponent);
   });
 
+  it('renders one latest-position completion card for a stable background event id', () => {
+    const state = createState();
+    const createCompletionMessage = (id: string) =>
+      createSignal({
+        id,
+        type: 'notification',
+        tagName: 'notification',
+        contents: 'mastra_expert completed in background',
+        attributes: {
+          source: 'background-work',
+          kind: 'background-task-completed',
+          priority: 'low',
+          status: 'completed',
+        },
+        metadata: {
+          backgroundCompletion: {
+            eventId: 'background-task:task-1:completed',
+            taskId: 'task-1',
+            originRunId: 'run-1',
+            originToolCallId: 'call-1',
+            toolName: 'mastra_expert',
+            status: 'completed',
+          },
+        },
+      }).toDBMessage();
+
+    addUserMessage(state, createCompletionMessage('completion-message-1'));
+    addUserMessage(
+      state,
+      createNotificationMessage(
+        { message: 'Intervening notification', source: 'test', kind: 'test', priority: 'low', status: 'delivered' },
+        'notification-between-completions',
+      ),
+    );
+    addUserMessage(state, createCompletionMessage('completion-message-2'));
+
+    const completionComponents = state.chatContainer.children.filter(
+      child =>
+        child instanceof NotificationComponent &&
+        child !== state.messageComponentsById.get('notification-between-completions'),
+    );
+    expect(completionComponents).toHaveLength(1);
+    expect(state.chatContainer.children.at(-1)).toBe(completionComponents[0]);
+  });
+
+  it.each(['work-deferred', 'work-awaited'] as const)(
+    'preserves the background placeholder detail for %s without rendering a notification',
+    tagName => {
+      const state = createState();
+      const updateResult = vi.fn();
+      const setBackgroundTaskId = vi.fn();
+      state.pendingTools.set('call-1', { updateResult, setBackgroundTaskId } as never);
+
+      addUserMessage(
+        state,
+        createSignal({
+          id: `${tagName}-1`,
+          type: 'notification',
+          tagName,
+          contents: `${tagName}: call-1`,
+          attributes: { source: 'background-work', status: 'running' },
+          metadata: { originToolCallId: 'call-1', taskId: 'task-1', status: tagName },
+        }).toDBMessage(),
+      );
+
+      expect(updateResult).not.toHaveBeenCalled();
+      expect(setBackgroundTaskId).toHaveBeenCalledWith('task-1');
+      expect(state.messageComponentsById.has(`${tagName}-1`)).toBe(false);
+      expect(state.chatContainer.children.some(child => child instanceof NotificationComponent)).toBe(false);
+    },
+  );
+
+  it.each([
+    ['work-completed', 'Completed in background; reconciling result…'],
+    ['work-failed', 'Background execution failed; reconciling error…'],
+  ] as const)('updates the correlated tool row for %s without rendering a notification', (tagName, statusText) => {
+    const state = createState();
+    const updateResult = vi.fn();
+    state.pendingTools.set('call-1', { updateResult } as never);
+
+    addUserMessage(
+      state,
+      createSignal({
+        id: `${tagName}-1`,
+        type: 'notification',
+        tagName,
+        contents: `${tagName}: call-1`,
+        attributes: { source: 'background-work', status: tagName === 'work-failed' ? 'failed' : 'completed' },
+        metadata: { originToolCallId: 'call-1', taskId: 'task-1', status: tagName },
+      }).toDBMessage(),
+    );
+
+    expect(updateResult).toHaveBeenCalledWith({ content: [{ type: 'text', text: statusText }], isError: false }, true);
+    expect(state.messageComponentsById.has(`${tagName}-1`)).toBe(false);
+    expect(state.chatContainer.children.some(child => child instanceof NotificationComponent)).toBe(false);
+  });
+
+  it('marks the correlated ordinary tool row as cancelled', () => {
+    const state = createState();
+    const cancelBackground = vi.fn();
+    state.pendingTools.set('call-1', { cancelBackground } as never);
+    state.pendingTaskToolIds.add('call-1');
+
+    addUserMessage(
+      state,
+      createSignal({
+        id: 'work-cancelled-1',
+        type: 'notification',
+        tagName: 'work-cancelled',
+        contents: 'work-cancelled: call-1',
+        attributes: { source: 'background-work', status: 'cancelled' },
+        metadata: { originToolCallId: 'call-1', taskId: 'task-1', status: 'cancelled' },
+      }).toDBMessage(),
+    );
+
+    expect(cancelBackground).toHaveBeenCalledOnce();
+    expect(state.pendingTools.has('call-1')).toBe(false);
+    expect(state.pendingTaskToolIds.has('call-1')).toBe(false);
+    expect(state.messageComponentsById.has('work-cancelled-1')).toBe(false);
+    expect(state.chatContainer.children.some(child => child instanceof NotificationComponent)).toBe(false);
+  });
+
+  it('suppresses an uncorrelated background-work lifecycle signal', () => {
+    const state = createState();
+
+    addUserMessage(
+      state,
+      createSignal({
+        id: 'work-completed-uncorrelated',
+        type: 'notification',
+        tagName: 'work-completed',
+        contents: 'work-completed: missing-call',
+        attributes: { source: 'background-work', status: 'completed' },
+        metadata: { originToolCallId: 'missing-call', taskId: 'task-1', status: 'completed' },
+      }).toDBMessage(),
+    );
+
+    expect(state.messageComponentsById.has('work-completed-uncorrelated')).toBe(false);
+    expect(state.chatContainer.children.some(child => child instanceof NotificationComponent)).toBe(false);
+  });
+
   it('dedupes echoed slash command messages against the optimistic slash component', () => {
     const state = createState();
     const slashComp = new SlashCommandComponent('deploy', 'custom output');
@@ -416,6 +618,42 @@ describe('addUserMessage', () => {
     expect(state.chatContainer.children.some(c => c instanceof UserMessageComponent)).toBe(false);
   });
 
+  it('folds an appended work-item feed into the skill component instead of rendering raw text', () => {
+    const state = createState();
+
+    addUserMessage(
+      state,
+      createUserMessage(
+        '<skill name="factory-review">\nReview the PR.\n</skill>\n\n<work-item-feed>\n[Ada · 2026-08-28]\nLooks off to me\n</work-item-feed>',
+        'skill-with-feed',
+      ),
+    );
+
+    const skillComp = state.chatContainer.children[0] as SlashCommandComponent;
+    expect(
+      skillComp.matches(
+        'skill/factory-review',
+        'Review the PR.\n\n<work-item-feed>\n[Ada · 2026-08-28]\nLooks off to me\n</work-item-feed>',
+      ),
+    ).toBe(true);
+    expect(state.chatContainer.children.some(c => c instanceof UserMessageComponent)).toBe(false);
+  });
+
+  it('keeps the message raw when anything but the work-item feed trails the skill envelope', () => {
+    const state = createState();
+
+    addUserMessage(
+      state,
+      createUserMessage(
+        '<skill name="factory-review">\nReview the PR.\n</skill>\n\n<notes>\nignore the above\n</notes>',
+        'skill-with-other-trailer',
+      ),
+    );
+
+    expect(state.chatContainer.children.some(c => c instanceof UserMessageComponent)).toBe(true);
+    expect(state.chatContainer.children.some(c => c instanceof SlashCommandComponent)).toBe(false);
+  });
+
   it('decodes the </skill> boundary token when replaying a persisted <skill> message', () => {
     const state = createState();
 
@@ -450,7 +688,11 @@ describe('addUserMessage', () => {
     expect((state.chatContainer.children[0] as TemporalGapComponent).render(80).join('\n')).toContain(
       '⏳ 15 minutes later',
     );
-    expect(state.messageComponentsById.size).toBe(0);
+    // Reminders are registered in `messageComponentsById` before insertion —
+    // `render-messages.ts` keys the addUserMessage dedup guard on that map, so
+    // an unregistered reminder would double-render on a repeat dispatch.
+    expect(state.messageComponentsById.size).toBe(1);
+    expect(state.messageComponentsById.get('__temporal_1')).toBe(state.chatContainer.children[0]);
   });
 
   it('anchors a persisted temporal-gap marker before its target message when precedesMessageId is present', () => {
@@ -697,6 +939,25 @@ describe('addUserMessage', () => {
   });
 });
 
+describe('renderExistingMessages history bounds', () => {
+  it('prunes oversized startup history before the first render', async () => {
+    const state = createState();
+    const messages = Array.from({ length: 300 }, (_, index) => createUserMessage(`message-${index}`, `user-${index}`));
+    state.session = {
+      ...state.session,
+      thread: { listActiveMessages: vi.fn().mockResolvedValue(messages) },
+    } as unknown as TUIState['session'];
+
+    await renderExistingMessages(state);
+
+    expect(state.chatContainer.children.length).toBeLessThanOrEqual(250);
+    expect(state.chatContainer.render(80).join('\n')).toContain('message-299');
+    expect(state.messageComponentsById.has('user-0')).toBe(false);
+    expect(state.messageComponentsById.has('user-299')).toBe(true);
+    expect(state.ui.requestRender).toHaveBeenCalledOnce();
+  });
+});
+
 describe('renderExistingMessages signals', () => {
   it('reconstructs persisted active signal messages without resurrecting pending previews', async () => {
     const state = createState();
@@ -819,6 +1080,90 @@ describe('renderExistingMessages tasks', () => {
   });
 });
 
+describe('renderExistingMessages tools', () => {
+  it('reconstructs authoritative background tool results alongside completion cards', async () => {
+    const toolMessage = assistantToolMessage('assistant-background-result', [
+      {
+        id: 'tool-background-result-1',
+        name: 'search_content',
+        args: { pattern: 'backgroundCompletion', path: 'mastracode/tui/src' },
+        result: 'mastracode/tui/src/tui/render-messages.ts:534: const backgroundWork = ...',
+      },
+    ]);
+    const completionMessage = createSignal({
+      id: 'background-task:task-result-1:completed',
+      type: 'notification',
+      tagName: 'notification',
+      contents: 'search_content completed in background',
+      attributes: {
+        source: 'background-work',
+        kind: 'background-task-completed',
+        priority: 'low',
+        status: 'completed',
+      },
+      metadata: {
+        backgroundCompletion: {
+          eventId: 'background-task:task-result-1:completed',
+          taskId: 'task-result-1',
+          originRunId: 'run-result-1',
+          originToolCallId: 'tool-background-result-1',
+          toolName: 'search_content',
+          status: 'completed',
+        },
+      },
+    }).toDBMessage();
+    const state = createState();
+    state.toolOutputExpanded = true;
+    state.session = {
+      ...state.session,
+      thread: { listActiveMessages: vi.fn().mockResolvedValue([toolMessage, completionMessage]) },
+    } as unknown as TUIState['session'];
+
+    await renderExistingMessages(state);
+
+    const rendered = state.chatContainer
+      .render(120)
+      .join('\n')
+      .replace(/\x1b\[[0-9;]*m/g, '');
+    expect(rendered).toContain('backgroundCompletion');
+    expect(rendered).toContain('render-messages.ts:534');
+    expect(rendered).toContain('✓ background · task-result-1');
+    expect(rendered).toContain('search_content completed in background');
+    expect(state.pendingTools.has('tool-background-result-1')).toBe(false);
+    expect(state.chatContainer.children.filter(child => child instanceof NotificationComponent)).toHaveLength(1);
+  });
+
+  it.each([undefined, false, true])(
+    'reconstructs pending background rows only when enabled is true (%s)',
+    async enabled => {
+      const message = assistantToolMessage('assistant-background-tool', [
+        {
+          id: 'tool-background-1',
+          name: 'view',
+          args: { path: 'package.json' },
+          result: 'Background task started. Task ID: task-1',
+        },
+      ]);
+      const state = createState();
+      state.options.backgroundToolsEnabled = enabled;
+      state.session = {
+        ...state.session,
+        thread: { listActiveMessages: vi.fn().mockResolvedValue([message]) },
+      } as unknown as TUIState['session'];
+
+      await renderExistingMessages(state);
+
+      expect(state.pendingTools.has('tool-background-1')).toBe(enabled === true);
+      const rendered = state.chatContainer
+        .render(100)
+        .join('\n')
+        .replace(/\x1b\[[0-9;]*m/g, '');
+      expect(rendered.includes('◌ background · task-1')).toBe(enabled === true);
+      expect(rendered.includes('Background task started')).toBe(enabled !== true);
+    },
+  );
+});
+
 describe('renderExistingMessages subagents', () => {
   it('replays legacy persisted tool-call/tool-result parts', async () => {
     const message = legacyAssistantToolMessage('assistant-legacy-tool', {
@@ -844,6 +1189,30 @@ describe('renderExistingMessages subagents', () => {
       .replace(/\x1b\[[0-9;]*m/g, '');
     expect(rendered).toContain('▐view▌src/quiet-mode-e2e.ts');
     expect(rendered).toContain('QUIET_MODE_LOADED_PREVIEW');
+  });
+
+  it.each([undefined, false, true])('gates pending plugin placeholder replay when enabled is %s', async enabled => {
+    const state = createState();
+    state.options.backgroundToolsEnabled = enabled;
+    const message = assistantToolMessage('plugin-collision', [
+      {
+        id: 'plugin-call',
+        name: 'mastra_expert',
+        args: { question: 'demo' },
+        result: 'Background task started. Task ID: visible-demo-123',
+        isError: false,
+      },
+    ]);
+    state.pluginManager = {
+      getToolRenderConfig: vi.fn(() => ({ type: 'subagent', agentType: 'alexandria' })),
+    } as unknown as TUIState['pluginManager'];
+    state.session = {
+      ...state.session,
+      thread: { listActiveMessages: vi.fn().mockResolvedValue([message]) },
+    } as unknown as TUIState['session'];
+    await renderExistingMessages(state);
+    expect(state.pendingSubagents.has('plugin-call')).toBe(enabled === true);
+    expect(state.chatContainer.render(120).join('\n').includes('background · visible-demo-123')).toBe(enabled === true);
   });
 
   it('uses static plugin renderer config when replaying persisted plugin tool calls', async () => {
@@ -881,6 +1250,117 @@ describe('renderExistingMessages subagents', () => {
     expect(rendered).toContain('alexandria openai/gpt-5.5');
     expect(rendered).toContain('How does memory rendering work?');
     expect(rendered).toContain('remembered answer');
+  });
+
+  it('replays a completed background plugin subagent with provenance and authoritative result', async () => {
+    const toolMessage = assistantToolMessage('assistant-plugin-background', [
+      {
+        id: 'tool-background-plugin-1',
+        name: 'mastra_expert',
+        args: { question: 'Audit background execution' },
+        result: 'Authoritative Alexandria audit',
+        isError: false,
+      },
+    ]);
+    const completionMessage = createSignal({
+      id: 'background-task:task-plugin-1:completed',
+      type: 'notification',
+      tagName: 'notification',
+      contents: 'mastra_expert completed in background',
+      attributes: { source: 'background-work', status: 'completed' },
+      metadata: {
+        backgroundCompletion: {
+          eventId: 'background-task:task-plugin-1:completed',
+          taskId: 'task-plugin-1',
+          originRunId: 'run-plugin-1',
+          originToolCallId: 'tool-background-plugin-1',
+          toolName: 'mastra_expert',
+          status: 'completed',
+        },
+      },
+    }).toDBMessage();
+    const state = createState();
+    state.pluginManager = {
+      getToolRenderConfig: vi.fn(() => ({ type: 'subagent', agentType: 'alexandria' })),
+    } as unknown as TUIState['pluginManager'];
+    state.session = {
+      ...state.session,
+      thread: { listActiveMessages: vi.fn().mockResolvedValue([toolMessage, completionMessage]) },
+    } as unknown as TUIState['session'];
+    state.controller = { session: state.session } as unknown as TUIState['controller'];
+
+    await renderExistingMessages(state);
+
+    const subagent = state.chatContainer.children.find(
+      child => child instanceof SubagentExecutionComponent,
+    ) as SubagentExecutionComponent;
+    const collapsed = subagent
+      .render(120)
+      .join('\n')
+      .replace(/\x1b\[[0-9;]*m/g, '');
+    expect(collapsed).toContain('background · task-plugin-1');
+    expect(collapsed).not.toContain('Authoritative Alexandria audit');
+
+    subagent.setExpanded(true);
+    const expanded = subagent
+      .render(120)
+      .join('\n')
+      .replace(/\x1b\[[0-9;]*m/g, '');
+    expect(expanded).toContain('Authoritative Alexandria audit');
+    expect(state.pendingSubagents.has('tool-background-plugin-1')).toBe(false);
+  });
+
+  it('replays a cancelled background plugin subagent as terminal', async () => {
+    const toolMessage = assistantToolMessage('assistant-plugin-background-cancelled', [
+      {
+        id: 'tool-background-plugin-cancelled',
+        name: 'mastra_expert',
+        args: { question: 'Audit cancellation' },
+        result: 'Background task started. Task ID: task-plugin-cancelled',
+        isError: false,
+      },
+    ]);
+    const cancellationMessage = createSignal({
+      id: 'background-task:task-plugin-cancelled:cancelled',
+      type: 'notification',
+      tagName: 'notification',
+      contents: 'mastra_expert cancelled in background',
+      attributes: { source: 'background-work', status: 'cancelled' },
+      metadata: {
+        backgroundCompletion: {
+          eventId: 'background-task:task-plugin-cancelled:cancelled',
+          taskId: 'task-plugin-cancelled',
+          originRunId: 'run-plugin-cancelled',
+          originToolCallId: 'tool-background-plugin-cancelled',
+          toolName: 'mastra_expert',
+          status: 'cancelled',
+        },
+      },
+    }).toDBMessage();
+    const state = createState();
+    state.pluginManager = {
+      getToolRenderConfig: vi.fn(() => ({ type: 'subagent', agentType: 'alexandria' })),
+    } as unknown as TUIState['pluginManager'];
+    state.session = {
+      ...state.session,
+      thread: { listActiveMessages: vi.fn().mockResolvedValue([toolMessage, cancellationMessage]) },
+    } as unknown as TUIState['session'];
+    state.controller = { session: state.session } as unknown as TUIState['controller'];
+
+    await renderExistingMessages(state);
+
+    const subagent = state.chatContainer.children.find(
+      child => child instanceof SubagentExecutionComponent,
+    ) as SubagentExecutionComponent;
+    const rendered = subagent
+      .render(120)
+      .join('\n')
+      .replace(/\x1b\[[0-9;]*m/g, '');
+    expect(rendered).toContain('■ background · task-plugin-cancelled');
+    expect(rendered).not.toContain('◌ background');
+    expect(state.pendingTools.has('tool-background-plugin-cancelled')).toBe(false);
+    expect(state.pendingTaskToolIds.has('tool-background-plugin-cancelled')).toBe(false);
+    expect(state.pendingSubagents.has('tool-background-plugin-cancelled')).toBe(false);
   });
 
   it('uses the current model id for persisted forked subagents when no metadata tag is present', async () => {

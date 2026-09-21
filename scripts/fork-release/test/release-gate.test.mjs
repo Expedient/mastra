@@ -591,15 +591,15 @@ test('release workflows pin the integrity-qualified toolchain and clean-room evi
   const packageJson = readJson(path.join(repoRoot, 'package.json'));
   assert.equal(
     packageJson.packageManager,
-    'pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25',
+    'pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1',
   );
   const gate = readFileSync(path.join(repoRoot, '.github/workflows/fork-release-gates.yml'), 'utf8');
   const publish = readFileSync(path.join(repoRoot, '.github/workflows/fork-npm-publish.yml'), 'utf8');
   const cleanRoom = readFileSync(path.join(toolingRoot, 'clean-room-agent-builder.mjs'), 'utf8');
   assert.match(cleanRoom, /packageManager: EXPECTED_PACKAGE_MANAGER/);
-  assert.match(cleanRoom, /pnpm@11\.13\.1\+sha512\.b2fc7683/);
+  assert.match(cleanRoom, /pnpm@11\.21\.0\+sha512\.521705bce/);
   assert.match(gate, /git status --porcelain=v1 --untracked-files=all/);
-  assert.match(gate, /PNPM_VERSION: 11\.13\.1/);
+  assert.match(gate, /PNPM_VERSION: 11\.21\.0/);
   assert.ok(gate.indexOf('network-review') < gate.indexOf('assemble-release-manifest.mjs'));
   assert.ok(gate.indexOf('compatibility-review') < gate.indexOf('assemble-release-manifest.mjs'));
   assert.match(publish, /npm install --global npm@11\.5\.1/);

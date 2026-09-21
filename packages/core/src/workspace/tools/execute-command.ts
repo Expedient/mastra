@@ -3,11 +3,13 @@ import { browserCliHandler } from '../../browser/cli-handler';
 import { createTool } from '../../tools';
 import { WORKSPACE_TOOLS } from '../constants';
 import { SandboxFeatureNotSupportedError } from '../errors';
-import { emitWorkspaceMetadata, requireSandbox } from './helpers';
+import {
+  DEFAULT_MAX_RETAINED_PROCESS_OUTPUT_BYTES,
+  RetainedOutputBuffer,
+} from '../sandbox/process-manager/process-handle';
+import { coerceNumericString, emitWorkspaceMetadata, requireSandbox } from './helpers';
 import { DEFAULT_TAIL_LINES, truncateOutput, sandboxToModelOutput } from './output-helpers';
 import { startWorkspaceSpan } from './tracing';
-
-const NUMERIC_TIMEOUT_STRING_REGEX = /^\d+(?:\.\d+)?$/;
 
 /**
  * Base input schema for execute_command (no background param).
@@ -18,18 +20,12 @@ export const executeCommandInputSchema = z.object({
     .string()
     .describe('The shell command to execute (e.g., "npm install", "ls -la src/", "cat file.txt | grep error")'),
   timeout: z
-    .preprocess(value => {
-      if (typeof value !== 'string') {
-        return value;
-      }
-      const trimmed = value.trim();
-      return NUMERIC_TIMEOUT_STRING_REGEX.test(trimmed) ? Number(trimmed) : value;
-    }, z.number())
+    .preprocess(coerceNumericString, z.number())
     .nullish()
     .describe('Maximum execution time in seconds. Example: 60 for 1 minute.'),
   cwd: z.string().nullish().describe('Working directory for the command'),
   tail: z
-    .number()
+    .preprocess(coerceNumericString, z.number().int())
     .nullish()
     .describe(
       `For foreground commands: limit output to the last N lines, similar to tail -n. Defaults to ${DEFAULT_TAIL_LINES}. Use 0 for no limit.`,
@@ -190,6 +186,10 @@ async function executeCommand(input: Record<string, any>, context: any) {
       cwd: cwd ?? undefined,
       timeout: timeout ?? undefined,
       abortSignal: bgAbortSignal,
+      // A background process collects output rather than being driven over stdin,
+      // so close stdin at spawn. Otherwise `rg`/`grep`/`cat` with no path argument
+      // reads stdin and never exits.
+      stdinMode: 'ignore',
       onStdout: bgConfig?.onStdout
         ? (data: string) => bgConfig.onStdout!(data, { pid: handle.pid, toolCallId })
         : undefined,
@@ -227,15 +227,17 @@ async function executeCommand(input: Record<string, any>, context: any) {
   }
 
   const startedAt = Date.now();
-  let stdout = '';
-  let stderr = '';
+  // Bounded copies used only on the error path, where the sandbox result is unavailable.
+  // Unbounded accumulation here crashes the process with RangeError on very large output.
+  const stdout = new RetainedOutputBuffer(DEFAULT_MAX_RETAINED_PROCESS_OUTPUT_BYTES);
+  const stderr = new RetainedOutputBuffer(DEFAULT_MAX_RETAINED_PROCESS_OUTPUT_BYTES);
   try {
     const result = await sandbox.executeCommand(command, [], {
       timeout: timeout ?? undefined,
       cwd: cwd ?? undefined,
       abortSignal: context?.abortSignal, // foreground processes use agent's abort signal
       onStdout: async (data: string) => {
-        stdout += data;
+        stdout.append(data);
         await context?.writer?.custom({
           type: 'data-sandbox-stdout',
           data: { output: data, timestamp: Date.now(), toolCallId },
@@ -243,7 +245,7 @@ async function executeCommand(input: Record<string, any>, context: any) {
         });
       },
       onStderr: async (data: string) => {
-        stderr += data;
+        stderr.append(data);
         await context?.writer?.custom({
           type: 'data-sandbox-stderr',
           data: { output: data, timestamp: Date.now(), toolCallId },
@@ -258,6 +260,8 @@ async function executeCommand(input: Record<string, any>, context: any) {
         exitCode: result.exitCode,
         success: result.success,
         executionTimeMs: result.executionTimeMs,
+        killed: result.killed,
+        timedOut: result.timedOut,
         toolCallId,
       },
     });
@@ -272,7 +276,12 @@ async function executeCommand(input: Record<string, any>, context: any) {
       return appendTerminalLine(parts, `Exit code: ${result.exitCode}`);
     }
 
-    return (await truncateOutput(result.stdout, tail, tokenLimit, tokenFrom)) || '(no output)';
+    return (
+      formatCommandOutput(
+        await truncateOutput(result.stdout, tail, tokenLimit, tokenFrom),
+        await truncateOutput(result.stderr, tail, tokenLimit, tokenFrom),
+      ).join('\n') || '(no output)'
+    );
   } catch (error) {
     await context?.writer?.custom({
       type: 'data-sandbox-exit',
@@ -285,8 +294,8 @@ async function executeCommand(input: Record<string, any>, context: any) {
     });
     span.end({ success: false }, { exitCode: -1 });
     const parts = formatCommandOutput(
-      await truncateOutput(stdout, tail, tokenLimit, tokenFrom),
-      await truncateOutput(stderr, tail, tokenLimit, tokenFrom),
+      await truncateOutput(stdout.toString(), tail, tokenLimit, tokenFrom),
+      await truncateOutput(stderr.toString(), tail, tokenLimit, tokenFrom),
     );
     const errorMessage = error instanceof Error ? error.message : String(error);
     return appendTerminalLine(parts, `Error: ${errorMessage}`);
@@ -305,13 +314,14 @@ Usage:
 - Commands run in a shell, so pipes, redirects, and chaining (&&, ||, ;) all work.
 - Always quote file paths that contain spaces (e.g., cd "/path/with spaces").
 - Use the timeout parameter (in seconds) to limit execution time. Behavior when omitted depends on the sandbox provider.
-- Optionally use cwd to override the working directory. Commands run from the sandbox default if omitted.`;
+- Optionally use cwd to override the working directory. Commands run from the sandbox's configured workingDirectory (or the provider default) if omitted.`;
 
 /** Foreground-only tool (no background param in schema). */
 export const executeCommandTool = createTool({
   id: WORKSPACE_TOOLS.SANDBOX.EXECUTE_COMMAND,
   description: baseDescription,
   inputSchema: executeCommandInputSchema,
+  outputSchema: z.string(),
   execute: executeCommand,
   toModelOutput: sandboxToModelOutput,
 });
@@ -323,6 +333,7 @@ export const executeCommandWithBackgroundTool = createTool({
 
 Set background: true to run long-running commands (dev servers, watchers) without blocking. You'll get a PID to track the process.`,
   inputSchema: executeCommandWithBackgroundSchema,
+  outputSchema: z.string(),
   execute: executeCommand,
   toModelOutput: sandboxToModelOutput,
 });

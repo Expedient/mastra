@@ -1,7 +1,7 @@
 import { format, isToday } from 'date-fns';
 import { Children, cloneElement, isValidElement } from 'react';
 import type { ComponentPropsWithoutRef, ElementType, ReactNode } from 'react';
-import { dataListStickyStartStyles } from './shared';
+import { dataListRowActionRevealStyles, dataListStickyStartStyles } from './shared';
 import type { DataListSticky } from './shared';
 import { Checkbox } from '@/ds/components/Checkbox';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 export type DataListCellProps = {
   children?: ReactNode;
   className?: string;
-  height?: 'default' | 'compact';
   /**
    * HTML element rendered for the cell. Defaults to `span`. Use `'label'` when
    * the cell wraps a labelable control (e.g. a Checkbox), so the whole cell
@@ -23,13 +22,12 @@ export type DataListCellProps = {
   sticky?: DataListSticky;
 } & Omit<ComponentPropsWithoutRef<'div'>, 'children' | 'className'>;
 
-export function DataListCell({ children, className, height = 'default', as, sticky, ...rest }: DataListCellProps) {
+export function DataListCell({ children, className, as, sticky, ...rest }: DataListCellProps) {
   const Component = as || 'span';
   return (
     <Component
       className={cn(
-        'relative grid max-w-full min-w-0 items-center overflow-hidden text-ui-md whitespace-nowrap text-neutral3 empty:before:text-neutral2 empty:before:content-["—"]',
-        height === 'compact' ? 'py-1.5' : 'py-2.5',
+        'relative grid max-w-full min-w-0 items-center overflow-hidden text-ui-md whitespace-nowrap text-muted-foreground empty:before:text-placeholder empty:before:content-["—"]',
         sticky === 'start' && dataListStickyStartStyles,
         className,
       )}
@@ -40,8 +38,27 @@ export function DataListCell({ children, className, height = 'default', as, stic
   );
 }
 
+/**
+ * Trailing cell for row actions, revealed on row hover or keyboard focus.
+ * Sits beside a `DataList.RowButton` inside a `DataList.RowWrapper`.
+ */
+export function DataListActionsCell({ children, className, ...rest }: DataListCellProps) {
+  return (
+    <DataListCell className={className} {...rest}>
+      <span
+        className={cn(
+          'flex w-full items-center justify-end gap-1 pr-3 transition-opacity duration-200',
+          dataListRowActionRevealStyles,
+        )}
+      >
+        {children}
+      </span>
+    </DataListCell>
+  );
+}
+
 const dataListTruncateContentStyles =
-  'block min-w-0 max-w-full truncate empty:before:content-["—"] empty:before:text-neutral2 [&>*]:min-w-0 [&>*]:max-w-full [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap';
+  'block min-w-0 max-w-full truncate empty:before:content-["—"] empty:before:text-placeholder [&>*]:min-w-0 [&>*]:max-w-full [&>*]:overflow-hidden [&>*]:text-ellipsis [&>*]:whitespace-nowrap';
 const dataListInlineTextTruncateStyles = 'min-w-0 flex-1 truncate';
 
 function DataListInlineText({ children }: { children: string | number }) {
@@ -71,9 +88,17 @@ function DataListTruncatedCellContent({ children }: { children: ReactNode }) {
   });
 }
 
-export function DataListTextCell({ children, className, ...rest }: DataListCellProps) {
+export type DataListTextCellProps = DataListCellProps & {
+  /**
+   * Typeface for the cell text. `mono` is for genuine code — paths, env values,
+   * serialized JSON — and drops a size step to match the sans columns optically.
+   */
+  font?: 'sans' | 'mono';
+};
+
+export function DataListTextCell({ children, className, font = 'sans', ...rest }: DataListTextCellProps) {
   return (
-    <DataListCell className={className} {...rest}>
+    <DataListCell className={cn(font === 'mono' && 'font-mono text-ui-smd', className)} {...rest}>
       <span className={dataListTruncateContentStyles}>
         <DataListTruncatedCellContent>{children}</DataListTruncatedCellContent>
       </span>
@@ -83,7 +108,7 @@ export function DataListTextCell({ children, className, ...rest }: DataListCellP
 
 export function DataListNameCell({ children, className }: DataListCellProps) {
   return (
-    <DataListCell className={cn('text-left text-neutral4', className)}>
+    <DataListCell className={cn('text-left font-medium text-muted-foreground', className)}>
       <span className={dataListTruncateContentStyles}>
         <DataListTruncatedCellContent>{children}</DataListTruncatedCellContent>
       </span>
@@ -93,7 +118,7 @@ export function DataListNameCell({ children, className }: DataListCellProps) {
 
 export function DataListDescriptionCell({ children, className }: DataListCellProps) {
   return (
-    <DataListCell className={cn('text-neutral2', className)}>
+    <DataListCell className={cn('text-placeholder', className)}>
       <span className={dataListTruncateContentStyles}>
         <DataListTruncatedCellContent>{children}</DataListTruncatedCellContent>
       </span>
@@ -108,7 +133,7 @@ export function DataListRowHeaderCell({ children, className, ...rest }: DataList
     <DataListCell
       sticky="start"
       className={cn(
-        'data-list-row-header -mr-4 -ml-5 w-auto max-w-none rounded-l-md pr-4 pl-5 text-left text-ui-sm font-semibold tracking-tight text-neutral2',
+        'data-list-row-header -mr-3 -ml-3 w-auto max-w-none pr-3 pl-3 text-left text-ui-sm font-medium text-placeholder',
         className,
       )}
       {...rest}
@@ -130,22 +155,14 @@ export type DataListNumberCellProps = DataListCellProps & {
 
 /**
  * Right-aligned numeric cell with tabular figures, for metric and summary
- * tables. Defaults to `compact` height to match those layouts; pass `highlight`
- * for the emphasized column.
+ * tables. Pass `highlight` for the emphasized column.
  */
-export function DataListNumberCell({
-  children,
-  className,
-  highlight,
-  height = 'compact',
-  ...rest
-}: DataListNumberCellProps) {
+export function DataListNumberCell({ children, className, highlight, ...rest }: DataListNumberCellProps) {
   return (
     <DataListCell
-      height={height}
       className={cn(
-        'justify-items-end text-right text-ui-sm tabular-nums',
-        highlight ? 'font-semibold text-neutral4' : 'text-neutral3',
+        'justify-items-end text-right text-ui-sm text-muted-foreground tabular-nums',
+        highlight && 'font-semibold',
         className,
       )}
       {...rest}
@@ -156,8 +173,7 @@ export function DataListNumberCell({
 }
 
 function getShortId(id: string | undefined): string {
-  if (!id) return '';
-  return id.length > 8 ? id.slice(0, 8) : id;
+  return id?.slice(0, 8) ?? '';
 }
 
 export interface DataListIdCellProps {
@@ -165,19 +181,15 @@ export interface DataListIdCellProps {
 }
 
 export function DataListIdCell({ id }: DataListIdCellProps) {
-  return (
-    <DataListCell height="compact" className="text-ui-smd text-neutral3 font-mono">
-      {getShortId(id)}
-    </DataListCell>
-  );
+  return <DataListCell className="text-ui-smd text-muted-foreground tracking-wide">{getShortId(id)}</DataListCell>;
 }
 
 export interface DataListSelectCellProps {
   checked: boolean;
   /**
    * Called when the checkbox is clicked. Receives the click event's `shiftKey`
-   * so callers can implement range-select. The event's propagation is stopped
-   * before `onToggle` runs, so the host row's `onClick` doesn't fire.
+   * so callers can implement range-select. The cell stops the click from
+   * reaching the host row, so the row's `onClick` doesn't fire.
    */
   onToggle: (shiftKey: boolean) => void;
   /** Disable the checkbox, e.g. while a selection mutation is in flight. */
@@ -189,53 +201,22 @@ export function DataListSelectCell({ checked, onToggle, disabled, ...rest }: Dat
   return (
     <DataListCell
       as="label"
-      height="compact"
       className={cn(
-        'size-8 justify-items-center self-center overflow-visible px-0 py-0!',
+        'size-8 justify-items-center self-center overflow-visible px-0',
         disabled ? 'cursor-not-allowed' : 'cursor-pointer',
       )}
       onClick={e => e.stopPropagation()}
+      data-selected={checked || undefined}
     >
       <Checkbox
         checked={checked}
         disabled={disabled}
         onCheckedChange={() => {}} // no-op: selection handled by onClick to capture shiftKey
-        onClick={e => {
-          e.stopPropagation();
-          // Base UI's Checkbox.Root is a `<span>`, so clicks still fire while
-          // disabled — guard here instead of relying on `:disabled` semantics.
-          if (disabled) return;
-          onToggle(e.shiftKey);
-        }}
+        // The click still has to bubble to the cell above, which is what keeps it
+        // off the host row. Base UI withholds this handler while disabled.
+        onClick={e => onToggle(e.shiftKey)}
         aria-label={rest['aria-label']}
       />
-    </DataListCell>
-  );
-}
-
-export interface DataListMonoCellProps {
-  children: ReactNode;
-  /** Override classes on the inner span (e.g. swap the default `text-neutral3` tone). */
-  className?: string;
-  /** Cell vertical padding. Defaults to `compact` to match other identifier cells. */
-  height?: 'default' | 'compact';
-}
-
-/**
- * Mono-typography cell with truncation. Shared by any column that
- * shows code-like text (input previews, JSON summaries, identifiers, etc.).
- */
-export function DataListMonoCell({ children, className, height = 'compact' }: DataListMonoCellProps) {
-  return (
-    <DataListCell height={height}>
-      <span
-        className={cn(
-          'block max-w-full min-w-0 truncate font-mono text-ui-smd text-neutral3 empty:before:content-["—"]',
-          className,
-        )}
-      >
-        {children}
-      </span>
     </DataListCell>
   );
 }
@@ -253,8 +234,22 @@ export interface DataListDateCellProps {
 export function DataListDateCell({ timestamp }: DataListDateCellProps) {
   const date = toDate(timestamp);
   return (
-    <DataListCell height="compact" className="text-ui-smd text-neutral2">
+    <DataListCell className="text-ui-smd text-placeholder">
       {date ? (isToday(date) ? 'Today' : format(date, 'MMM dd')) : null}
+    </DataListCell>
+  );
+}
+
+export interface DataListCreatedCellProps {
+  timestamp: Date | string;
+}
+
+/** Combined date + time cell — `MMM dd h:mm:ss a` (e.g. `Aug 31 1:07:47 pm`), no milliseconds. */
+export function DataListCreatedCell({ timestamp }: DataListCreatedCellProps) {
+  const date = toDate(timestamp);
+  return (
+    <DataListCell className="text-ui-smd text-muted-foreground tabular-nums">
+      {date ? format(date, 'MMM dd h:mm:ss aaa') : null}
     </DataListCell>
   );
 }
@@ -263,15 +258,16 @@ export interface DataListTimeCellProps {
   timestamp: Date | string;
 }
 
-/** Compact monospace time cell — `HH:mm:ss.SSS` with the millisecond portion tinted. */
 export function DataListTimeCell({ timestamp }: DataListTimeCellProps) {
   const date = toDate(timestamp);
   return (
-    <DataListCell height="compact" className="text-ui-smd text-neutral3 flex font-mono">
+    <DataListCell className="text-ui-smd text-muted-foreground flex tabular-nums">
       {date ? (
         <>
-          {format(date, 'HH:mm:ss')}
-          <span className="text-neutral2">.{String(date.getMilliseconds()).padStart(3, '0')}</span>
+          {format(date, 'h:mm:ss')}
+          <span className="text-placeholder">
+            .{String(date.getMilliseconds()).padStart(3, '0')} {format(date, 'aaa')}
+          </span>
         </>
       ) : null}
     </DataListCell>

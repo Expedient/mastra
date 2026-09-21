@@ -95,7 +95,7 @@ export function AgentsPage() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <SectionHeader
             title="Sub-Agents"
@@ -136,7 +136,7 @@ export function AgentsPage() {
                           type="text"
                           disabled={isDisabled}
                           className={cn(
-                            'border border-transparent appearance-none block w-full text-neutral3 bg-transparent',
+                            'border border-transparent appearance-none block w-full text-muted-foreground bg-transparent',
                             !isDisabled && 'border-border1 border-dashed ',
                           )}
                           value={

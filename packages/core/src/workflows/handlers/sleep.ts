@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { RequestContext } from '../../di';
 import type { PubSub } from '../../events/pubsub';
 import { SpanType, createObservabilityContext, resolveObservabilityContext } from '../../observability';
@@ -16,6 +15,7 @@ import type {
   StepFlowEntry,
   StepResult,
 } from '../types';
+import { getControlFlowIdentityAttributes } from './control-flow';
 
 export interface ExecuteSleepParams extends ObservabilityContext {
   workflowId: string;
@@ -24,6 +24,8 @@ export interface ExecuteSleepParams extends ObservabilityContext {
   entry: {
     type: 'sleep';
     id: string;
+    description?: string;
+    metadata?: Record<string, any>;
     duration?: number;
     fn?: ExecuteFunction<any, any, any, any, any, DefaultEngineType>;
   };
@@ -71,13 +73,14 @@ export async function executeSleep(engine: DefaultExecutionEngine, params: Execu
       attributes: {
         durationMs: duration,
         sleepType: fn ? 'dynamic' : 'fixed',
+        ...getControlFlowIdentityAttributes(entry),
       },
     },
     executionContext,
   });
 
   if (fn) {
-    const stepCallId = randomUUID();
+    const stepCallId = globalThis.crypto.randomUUID();
     duration = await engine.wrapDurableOperation(`workflow.${workflowId}.sleep.${entry.id}`, async () => {
       return fn({
         runId,
@@ -124,7 +127,12 @@ export async function executeSleep(engine: DefaultExecutionEngine, params: Execu
   }
 
   try {
-    await engine.executeSleepDuration(!duration || duration < 0 ? 0 : duration, entry.id, workflowId);
+    await engine.executeSleepDuration(
+      !duration || duration < 0 ? 0 : duration,
+      entry.id,
+      workflowId,
+      abortController?.signal,
+    );
     await engine.endChildSpan({
       span: sleepSpan,
       operationId: `workflow.${workflowId}.run.${runId}.sleep.${entry.id}.span.end`,
@@ -146,6 +154,8 @@ export interface ExecuteSleepUntilParams extends ObservabilityContext {
   entry: {
     type: 'sleepUntil';
     id: string;
+    description?: string;
+    metadata?: Record<string, any>;
     date?: Date;
     fn?: ExecuteFunction<any, any, any, any, any, DefaultEngineType>;
   };
@@ -197,13 +207,14 @@ export async function executeSleepUntil(
         untilDate: date,
         durationMs: date ? Math.max(0, date.getTime() - Date.now()) : undefined,
         sleepType: fn ? 'dynamic' : 'fixed',
+        ...getControlFlowIdentityAttributes(entry),
       },
     },
     executionContext,
   });
 
   if (fn) {
-    const stepCallId = randomUUID();
+    const stepCallId = globalThis.crypto.randomUUID();
     const dateResult = await engine.wrapDurableOperation(`workflow.${workflowId}.sleepUntil.${entry.id}`, async () => {
       return fn({
         runId,
@@ -261,7 +272,7 @@ export async function executeSleepUntil(
   }
 
   try {
-    await engine.executeSleepUntilDate(date, entry.id, workflowId);
+    await engine.executeSleepUntilDate(date, entry.id, workflowId, abortController?.signal);
     await engine.endChildSpan({
       span: sleepUntilSpan,
       operationId: `workflow.${workflowId}.run.${runId}.sleepUntil.${entry.id}.span.end`,

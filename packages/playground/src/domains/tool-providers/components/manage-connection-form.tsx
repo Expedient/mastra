@@ -1,12 +1,14 @@
 import { AlertDialog } from '@mastra/playground-ui/components/AlertDialog';
 import { Button } from '@mastra/playground-ui/components/Button';
 import { DialogBody } from '@mastra/playground-ui/components/Dialog';
+import { FieldBlock, fieldErrorId } from '@mastra/playground-ui/components/FormFieldBlocks';
 import { Input } from '@mastra/playground-ui/components/Input';
+import { Notice } from '@mastra/playground-ui/components/Notice';
 import { Spinner } from '@mastra/playground-ui/components/Spinner';
 import { Txt } from '@mastra/playground-ui/components/Txt';
 import { Icon } from '@mastra/playground-ui/icons/Icon';
 import { toast } from '@mastra/playground-ui/utils/toast';
-import { ChevronLeft, Link2 } from 'lucide-react';
+import { ChevronLeft, Link2, Unplug } from 'lucide-react';
 import { useState } from 'react';
 
 import { useDisconnectConnection } from '../hooks/use-disconnect-connection';
@@ -40,6 +42,7 @@ export const ManageConnectionForm = ({
   const disconnectConnection = useDisconnectConnection();
   const [draft, setDraft] = useState(initialLabel);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const connectionNameField = `${testIdPrefix}-name`;
   const integrationName = titleize(providerId);
 
   const disconnect = () => {
@@ -65,11 +68,9 @@ export const ManageConnectionForm = ({
             onClick={onBack}
             aria-label="Back to connections"
             data-testid={`${testIdPrefix}-back`}
-            className="text-neutral3 -mt-1 -ml-1.5 w-fit"
+            className="text-muted-foreground -mt-1 -ml-1.5 w-fit"
+            icon={<ChevronLeft />}
           >
-            <Icon>
-              <ChevronLeft />
-            </Icon>
             Connections
           </Button>
         )}
@@ -78,20 +79,20 @@ export const ManageConnectionForm = ({
             {iconUrl ? (
               <img src={iconUrl} alt="" className="size-8 object-contain" />
             ) : (
-              <Icon size="lg" className="text-neutral3">
+              <Icon size="lg" className="text-muted-foreground">
                 <Link2 />
               </Icon>
             )}
           </div>
 
           <div className="flex w-full flex-col items-center gap-1.5">
-            <Txt variant="ui-xs" className="text-neutral3">
+            <Txt variant="ui-xs" className="text-muted-foreground">
               {integrationName} connection
             </Txt>
             <div className="relative w-full">
               <Input
-                id={`${testIdPrefix}-input`}
-                variant="filled"
+                id={`input-${connectionNameField}`}
+                name={connectionNameField}
                 size="sm"
                 value={draft}
                 onChange={event => {
@@ -102,6 +103,8 @@ export const ManageConnectionForm = ({
                 placeholder="Unnamed connection"
                 autoFocus
                 aria-label="Connection name"
+                aria-describedby={rename.error ? fieldErrorId(connectionNameField) : undefined}
+                error={Boolean(rename.error)}
                 testId={`${testIdPrefix}-input`}
                 className="text-center"
               />
@@ -112,13 +115,12 @@ export const ManageConnectionForm = ({
               )}
             </div>
             {rename.error ? (
-              <Txt variant="ui-xs" className="text-red-500">
-                {String(rename.error)}
-              </Txt>
+              <FieldBlock.ErrorMsg name={connectionNameField}>{String(rename.error)}</FieldBlock.ErrorMsg>
             ) : null}
           </div>
 
           <Button
+            icon={<Unplug />}
             type="button"
             variant="ghost"
             onClick={() => setConfirmDisconnectOpen(true)}
@@ -140,9 +142,9 @@ export const ManageConnectionForm = ({
             </AlertDialog.Description>
           </AlertDialog.Header>
           {disconnectConnection.error ? (
-            <Txt variant="ui-xs" className="text-red-500">
-              {String(disconnectConnection.error)}
-            </Txt>
+            <div role="alert">
+              <Notice variant="destructive">{String(disconnectConnection.error)}</Notice>
+            </div>
           ) : null}
           <AlertDialog.Footer>
             <AlertDialog.Cancel
@@ -152,6 +154,7 @@ export const ManageConnectionForm = ({
               Cancel
             </AlertDialog.Cancel>
             <Button
+              icon={<Unplug />}
               type="button"
               variant="primary"
               onClick={disconnect}

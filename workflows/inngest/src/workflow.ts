@@ -350,6 +350,7 @@ export class InngestWorkflow<
           perStep,
           tracingOptions,
           actor,
+          parentStream,
           nestedWorkflowOutputMode: requestedNestedWorkflowOutputMode,
         } = event.data;
         const nestedWorkflowOutputMode = resolveNestedWorkflowOutputMode(requestedNestedWorkflowOutputMode);
@@ -369,6 +370,19 @@ export class InngestWorkflow<
             `Workflow "${this.id}" was triggered without a runId, so run "${runId}" cannot be cancelled by id. ` +
               `Send \`data.runId\` on the trigger event (or start the run with createRun()) to make it cancellable.`,
           );
+        }
+
+        if (resume && (initialState === undefined || resume.stepResults === undefined)) {
+          const workflowsStore = await this.#mastra?.getStorage()?.getStore('workflows');
+          const snapshot = await workflowsStore?.loadWorkflowSnapshot({
+            workflowName: this.id,
+            runId,
+          });
+
+          initialState ??= snapshot?.value;
+          if (resume.stepResults === undefined && snapshot?.context !== undefined) {
+            resume = { ...resume, stepResults: snapshot.context };
+          }
         }
 
         // Create InngestPubSub instance. Publishes go through `inngest.realtime.publish()`
@@ -415,7 +429,7 @@ export class InngestWorkflow<
           return span?.exportSpan();
         });
 
-        const engine = new InngestExecutionEngine(this.#mastra, step, attempt, this.options);
+        const engine = new InngestExecutionEngine(this.#mastra, step, attempt, this.options, parentStream);
 
         let result: WorkflowResult<TState, TInput, TOutput, TSteps>;
         try {
@@ -455,6 +469,15 @@ export class InngestWorkflow<
                 });
               } catch (err) {
                 this.logger.debug?.('Failed to publish watch event:', err);
+              }
+              // Nested functions have workflow-local channels; send writer chunks
+              // directly to the outermost run without forwarding lifecycle events.
+              if (parentStream) {
+                try {
+                  await defaultPubsub.publishWorkflowWatchTo(parentStream.workflowId, parentStream.runId, chunk);
+                } catch (err) {
+                  this.logger.debug?.('Failed to publish parent watch event:', err);
+                }
               }
             },
           });
@@ -571,6 +594,13 @@ export class InngestWorkflow<
                     resumeLabels: existingSnapshot?.resumeLabels ?? result.resumeLabels ?? {},
                     result: result.status === 'success' ? toSnapshotResult(result.result) : undefined,
                     error: result.status === 'failed' ? result.error : undefined,
+                    requestContext: requestContext.toJSON(),
+                    tracingContext: workflowSpanData
+                      ? {
+                          traceId: workflowSpanData.traceId,
+                          spanId: workflowSpanData.id,
+                        }
+                      : undefined,
                     timestamp: Date.now(),
                   },
                 });

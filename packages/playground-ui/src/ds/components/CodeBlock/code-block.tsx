@@ -56,8 +56,10 @@ export function CodeBlock({
 
   return (
     <figure
+      // A scrolling `pre` still reports its longest line as an intrinsic width, which
+      // grows every ancestor; containment keeps the block inside the width it is given.
       className={cn(
-        'group relative flex w-full flex-col overflow-hidden rounded-2xl border border-border2/40 bg-surface2',
+        'group relative flex w-full flex-col overflow-hidden rounded-2xl border border-border2/40 bg-surface2 [contain:inline-size]',
         className,
       )}
     >
@@ -98,7 +100,7 @@ export function CodeBlock({
 
       {!hasOptions && fileName && (
         <div className="border-border2/40 flex items-center border-b px-4 py-2">
-          <figcaption className="text-ui-sm text-neutral4 font-mono">{fileName}</figcaption>
+          <figcaption className="text-ui-sm text-muted-foreground font-mono">{fileName}</figcaption>
           {actions && <div className="ml-auto flex items-center">{actions}</div>}
         </div>
       )}
@@ -112,7 +114,7 @@ export function CodeBlock({
           code={code}
           lang={lang}
           className={cn(
-            'px-4 py-3 font-mono text-ui-sm text-neutral5',
+            'px-4 py-3 font-mono text-ui-sm text-foreground',
             overflow === 'scroll' ? 'overflow-x-auto whitespace-pre' : 'break-all whitespace-pre-wrap',
           )}
         />

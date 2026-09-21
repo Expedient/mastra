@@ -19,19 +19,26 @@ import type {
 } from '../state/types';
 import type { AIV5Type } from '../types';
 import { findToolCallArgs } from '../utils/provider-compat';
+import { preserveResponseItemIdsOnMerge } from '../utils/response-item-metadata';
 import { sanitizeToolName } from '../utils/tool-name';
 
 /**
- * Filter out empty text parts from message parts array.
+ * Compact malformed entries and filter out empty text parts from message parts arrays.
  * Empty text blocks are not allowed by Anthropic's API and cause request failures.
  * This can happen during streaming when text-start/text-end events occur without actual content.
  * However, if the only part is an empty text part, it is preserved as a legitimate placeholder
  * (e.g. empty assistant messages between tool results and user messages).
  */
-function filterEmptyTextParts(parts: MastraMessagePart[]): MastraMessagePart[] {
-  const hasNonEmptyParts = parts.some(part => !(part.type === 'text' && part.text === ''));
-  if (!hasNonEmptyParts) return parts;
-  return parts.filter(part => {
+function compactMessageParts(parts: unknown): MastraMessagePart[] {
+  if (!Array.isArray(parts)) return [];
+  return parts.filter((part): part is MastraMessagePart => part !== null && typeof part === 'object');
+}
+
+function filterEmptyTextParts(parts: unknown): MastraMessagePart[] {
+  const compactedParts = compactMessageParts(parts);
+  const hasNonEmptyParts = compactedParts.some(part => !(part.type === 'text' && part.text === ''));
+  if (!hasNonEmptyParts) return compactedParts;
+  return compactedParts.filter(part => {
     if (part.type === 'text') {
       return part.text !== '';
     }
@@ -69,7 +76,7 @@ function isUserSignalType(type: string | undefined): boolean {
 function getTextContent(message: MastraDBMessage): string {
   return typeof message.content.content === 'string'
     ? message.content.content
-    : (message.content.parts.find(part => part.type === 'text')?.text ?? '');
+    : (compactMessageParts(message.content.parts).find(part => part.type === 'text')?.text ?? '');
 }
 
 function toSignalDataPart(message: MastraDBMessage): AIV5Type.DataUIPart<AIV5.UIDataTypes> {
@@ -252,8 +259,10 @@ export class AIV5Adapter {
       };
     }
 
+    const contentParts = compactMessageParts(dbMsg.content.parts);
+
     // 1. Handle tool invocations (only if not already in parts array)
-    const hasToolInvocationParts = dbMsg.content.parts?.some(p => p.type === 'tool-invocation');
+    const hasToolInvocationParts = contentParts.some(p => p.type === 'tool-invocation');
     if (dbMsg.content.toolInvocations && !hasToolInvocationParts) {
       for (const invocation of dbMsg.content.toolInvocations) {
         if (invocation.state === 'result') {
@@ -276,8 +285,8 @@ export class AIV5Adapter {
     }
 
     // 2. Check if we have parts with providerMetadata first
-    const hasReasoningInParts = dbMsg.content.parts?.some(p => p.type === 'reasoning');
-    const hasFileInParts = dbMsg.content.parts?.some(p => p.type === 'file');
+    const hasReasoningInParts = contentParts.some(p => p.type === 'reasoning');
+    const hasFileInParts = contentParts.some(p => p.type === 'file');
 
     // 3. Handle reasoning (AIV4 reasoning is a string) - only if not in parts
     if (dbMsg.content.reasoning && !hasReasoningInParts) {
@@ -302,8 +311,8 @@ export class AIV5Adapter {
 
     // 5. Handle parts directly (if present in V2)
     let hasNonToolReasoningParts = false;
-    if (dbMsg.content.parts) {
-      for (const part of dbMsg.content.parts) {
+    if (contentParts.length > 0) {
+      for (const part of contentParts) {
         // Handle tool-invocation parts
         if (part.type === 'tool-invocation' && part.toolInvocation) {
           const inv = part.toolInvocation;
@@ -396,6 +405,7 @@ export class AIV5Adapter {
           // shapes so the media type survives (instead of the image/png default) and the
           // payload is read from `url` when v5-shaped. Mirrors #17366.
           const { mediaType: fileMimeType, data: fileData } = resolveFilePartMediaTypeAndData(part);
+          const filename = (part as { filename?: string }).filename;
 
           // Skip file parts that came from experimental_attachments to avoid duplicates
           if (typeof fileData === 'string' && attachmentUrls.has(fileData)) {
@@ -414,6 +424,7 @@ export class AIV5Adapter {
               type: 'file' as const,
               url: fileData,
               mediaType: categorized.mimeType || 'image/png',
+              ...(filename ? { filename } : {}),
             };
             v5UIPart.providerMetadata = mergeMastraCreatedAt(part.providerMetadata, part.createdAt);
             parts.push(v5UIPart);
@@ -451,6 +462,7 @@ export class AIV5Adapter {
               type: 'file' as const,
               url: dataUri,
               mediaType: finalMimeType,
+              ...(filename ? { filename } : {}),
             };
             v5UIPart.providerMetadata = mergeMastraCreatedAt(part.providerMetadata, part.createdAt);
             parts.push(v5UIPart);
@@ -484,6 +496,11 @@ export class AIV5Adapter {
               transformToolPayloads,
             ),
           });
+        } else if (part.type === 'error') {
+          // Mastra-only record of a terminal failure. Preserved for DB/UI history
+          // (see sanitizeV5UIMessages, which strips it from provider prompts).
+          parts.push(part as unknown as AIV5Type.UIMessage['parts'][number]);
+          hasNonToolReasoningParts = true;
         } else {
           // Other parts (step-start, etc.) can be pushed as-is
           parts.push(part);
@@ -655,8 +672,11 @@ export class AIV5Adapter {
         if (AIV5.isToolUIPart(p)) {
           const toolName = getToolName(p);
           const callProviderMetadata = 'callProviderMetadata' in p ? p.callProviderMetadata : undefined;
+          // Preserve provider-executed so a hosted tool (e.g. OpenAI tool_search)
+          // stays inline in the assistant message on replay, matching fromModelMessage.
+          const toolProviderExecuted = (p as { providerExecuted?: boolean }).providerExecuted;
           if (p.state === 'output-available') {
-            return {
+            const toolInvocationPart: MastraToolInvocationPart = {
               type: 'tool-invocation' as const,
               toolInvocation: {
                 toolCallId: p.toolCallId,
@@ -670,9 +690,13 @@ export class AIV5Adapter {
               },
               providerMetadata: callProviderMetadata,
               createdAt: getMastraCreatedAt(callProviderMetadata),
-            } satisfies MastraToolInvocationPart;
+            };
+            if (toolProviderExecuted !== undefined) {
+              (toolInvocationPart as { providerExecuted?: boolean }).providerExecuted = toolProviderExecuted;
+            }
+            return toolInvocationPart;
           }
-          return {
+          const toolInvocationPart: MastraToolInvocationPart = {
             type: 'tool-invocation' as const,
             toolInvocation: {
               toolCallId: p.toolCallId,
@@ -682,7 +706,11 @@ export class AIV5Adapter {
             },
             providerMetadata: callProviderMetadata,
             createdAt: getMastraCreatedAt(callProviderMetadata),
-          } satisfies MastraToolInvocationPart;
+          };
+          if (toolProviderExecuted !== undefined) {
+            (toolInvocationPart as { providerExecuted?: boolean }).providerExecuted = toolProviderExecuted;
+          }
+          return toolInvocationPart;
         }
 
         if (p.type === 'reasoning') {
@@ -742,6 +770,14 @@ export class AIV5Adapter {
 
         if (p.type === 'step-start') {
           return p;
+        }
+
+        // Mastra-only record of a terminal failure. Round-trips through UI
+        // history unchanged; sanitizeV5UIMessages strips it from provider
+        // prompts. AIV6Adapter.fromUIMessage pairs its output with the incoming
+        // parts by index, so dropping it here would misalign every later part.
+        if ((p as { type: string }).type === 'error') {
+          return p as unknown as MastraMessagePart;
         }
 
         // Handle data-* parts (custom parts emitted by tools via writer.custom())
@@ -836,8 +872,10 @@ export class AIV5Adapter {
     context: { dbMessages?: MastraDBMessage[] } = {},
   ): MastraDBMessage {
     const content = Array.isArray(modelMsg.content)
-      ? modelMsg.content
-      : [{ type: 'text', text: modelMsg.content } satisfies AIV5.TextPart];
+      ? modelMsg.content.filter(part => part !== null && typeof part === 'object')
+      : typeof modelMsg.content === 'string'
+        ? [{ type: 'text', text: modelMsg.content } satisfies AIV5.TextPart]
+        : [];
 
     const mastraDBParts: MastraMessageContentV2['parts'] = [];
     const toolInvocations: NonNullable<MastraDBMessage['content']['toolInvocations']> = [];
@@ -869,6 +907,14 @@ export class AIV5Adapter {
         if (part.providerOptions) {
           toolInvocationPart.providerMetadata = part.providerOptions;
           toolInvocationPart.createdAt = getMastraCreatedAt(part.providerOptions);
+        }
+        // Preserve provider-executed so the replayed part stays inline in the
+        // assistant message. Without it, convertToModelMessages moves the result
+        // into a `tool` role message, where @ai-sdk/openai re-serializes a hosted
+        // tool_search as a client-mode tool_search_output ("No tool call found").
+        const toolCallProviderExecuted = (part as { providerExecuted?: boolean }).providerExecuted;
+        if (toolCallProviderExecuted !== undefined) {
+          (toolInvocationPart as { providerExecuted?: boolean }).providerExecuted = toolCallProviderExecuted;
         }
         mastraDBParts.push(toolInvocationPart);
         toolInvocations.push({
@@ -922,10 +968,22 @@ export class AIV5Adapter {
           toolInvocations.push(call);
         }
 
+        const resultProviderExecuted = (toolResultPart as { providerExecuted?: boolean }).providerExecuted;
+
         if (matchingV2Part && matchingV2Part.type === 'tool-invocation') {
           updateMatchingCallInvocationResult(toolResultPart, matchingV2Part.toolInvocation);
+          if (resultProviderExecuted !== undefined) {
+            (matchingV2Part as { providerExecuted?: boolean }).providerExecuted = resultProviderExecuted;
+          }
           if (toolResultPart.providerOptions) {
-            matchingV2Part.providerMetadata = toolResultPart.providerOptions;
+            // When the call and result carry different Responses item ids
+            // (e.g. OpenAI hosted tool_search: tsc_… call / tso_… output),
+            // keep both so next-turn replay can reference each item.
+            matchingV2Part.providerMetadata = preserveResponseItemIdsOnMerge(
+              matchingV2Part.providerMetadata as Record<string, unknown> | undefined,
+              toolResultPart.providerOptions as Record<string, unknown> | undefined,
+              toolResultPart.providerOptions as Record<string, unknown>,
+            ) as AIV5Type.ProviderMetadata;
             matchingV2Part.createdAt = getMastraCreatedAt(toolResultPart.providerOptions) ?? matchingV2Part.createdAt;
           }
         } else {
@@ -939,6 +997,9 @@ export class AIV5Adapter {
             },
           };
           updateMatchingCallInvocationResult(toolResultPart, toolInvocationPart.toolInvocation);
+          if (resultProviderExecuted !== undefined) {
+            (toolInvocationPart as { providerExecuted?: boolean }).providerExecuted = resultProviderExecuted;
+          }
           if (toolResultPart.providerOptions) {
             toolInvocationPart.providerMetadata = toolResultPart.providerOptions;
             toolInvocationPart.createdAt = getMastraCreatedAt(toolResultPart.providerOptions);

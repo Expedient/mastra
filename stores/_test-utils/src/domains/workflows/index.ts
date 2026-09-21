@@ -2,7 +2,7 @@ import type { MastraStorage, WorkflowsStorage } from '@mastra/core/storage';
 import type { WorkflowRunState } from '@mastra/core/workflows';
 import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, it, expect, beforeEach } from 'vitest';
-import { checkWorkflowSnapshot, createSampleWorkflowSnapshot } from './data';
+import { checkWorkflowSnapshot, createSampleSuspendedSnapshotWithThread, createSampleWorkflowSnapshot } from './data';
 
 export interface WorkflowsTestOptions {
   storage: MastraStorage;
@@ -352,6 +352,78 @@ export function createWorkflowsTests({ storage }: WorkflowsTestOptions) {
     });
   });
 
+  /**
+   * The threadId filter is best-effort: adapters MAY ignore it and return a
+   * superset (the agent re-verifies in-process), but MUST NOT exclude runs
+   * whose snapshot carries the requested thread id. These tests only assert
+   * inclusion, so both implementing and non-implementing adapters pass.
+   */
+  describe('listWorkflowRuns with threadId (best-effort filter)', () => {
+    const workflowName = 'workflow-thread-test';
+    let agenticRunIdA: string;
+    let durableRunIdA: string;
+
+    beforeEach(async () => {
+      await workflowsStorage.dangerouslyClearAll();
+
+      const agenticA = createSampleSuspendedSnapshotWithThread({
+        threadId: 'thread-a',
+        resourceId: 'resource-1',
+        layout: 'agentic-loop',
+      });
+      agenticRunIdA = agenticA.runId;
+      const durableA = createSampleSuspendedSnapshotWithThread({
+        threadId: 'thread-a',
+        resourceId: 'resource-1',
+        layout: 'durable',
+      });
+      durableRunIdA = durableA.runId;
+      const agenticB = createSampleSuspendedSnapshotWithThread({
+        threadId: 'thread-b',
+        resourceId: 'resource-1',
+        layout: 'agentic-loop',
+      });
+      const durableB = createSampleSuspendedSnapshotWithThread({
+        threadId: 'thread-b',
+        resourceId: 'resource-1',
+        layout: 'durable',
+      });
+
+      for (const { snapshot, runId } of [agenticA, durableA, agenticB, durableB]) {
+        await workflowsStorage.persistWorkflowSnapshot({
+          workflowName,
+          runId,
+          resourceId: 'resource-1',
+          snapshot,
+        });
+      }
+    });
+
+    it('includes runs whose agentic-loop layout snapshot matches the threadId', async () => {
+      const { runs } = await workflowsStorage.listWorkflowRuns({
+        workflowName,
+        threadId: 'thread-a',
+      });
+      expect(runs.map(run => run.runId)).toContain(agenticRunIdA);
+    });
+
+    it('includes runs whose durable-layout snapshot matches the threadId', async () => {
+      const { runs } = await workflowsStorage.listWorkflowRuns({
+        workflowName,
+        threadId: 'thread-a',
+      });
+      expect(runs.map(run => run.runId)).toContain(durableRunIdA);
+    });
+
+    it('does not error when filtering by an unknown threadId', async () => {
+      const { runs } = await workflowsStorage.listWorkflowRuns({
+        workflowName,
+        threadId: 'thread-that-does-not-exist',
+      });
+      expect(Array.isArray(runs)).toBe(true);
+    });
+  });
+
   it('should store valid ISO date strings for createdAt and updatedAt in workflow runs', async () => {
     // Use the storage instance from the test context
     const workflowName = 'test-workflow';
@@ -583,6 +655,89 @@ export function createWorkflowsTests({ storage }: WorkflowsTestOptions) {
       expect(run?.snapshot).toEqual(snapshot);
       expect(run?.workflowName).toBe(workflowName);
       expect(run?.runId).toBe(runId);
+    });
+
+    it('should apply an update when the expectedStatus guard matches', async () => {
+      if (!supportsConcurrentUpdates) {
+        console.log('Skipping expectedStatus guard test');
+        return;
+      }
+      const workflowName = 'test-workflow';
+      const runId = `run-${randomUUID()}`;
+
+      await workflowsStorage.persistWorkflowSnapshot({
+        workflowName,
+        runId,
+        snapshot: { status: 'suspended', context: {}, suspendedPaths: { 'step-1': [0] } } as any,
+      });
+
+      const updated = await workflowsStorage.updateWorkflowState({
+        workflowName,
+        runId,
+        opts: { status: 'running', expectedStatus: 'suspended' },
+      });
+
+      expect(updated?.status).toBe('running');
+      // The guard must never leak into the persisted snapshot.
+      expect(updated).not.toHaveProperty('expectedStatus');
+
+      const persisted = await workflowsStorage.loadWorkflowSnapshot({ workflowName, runId });
+      expect(persisted?.status).toBe('running');
+      expect(persisted).not.toHaveProperty('expectedStatus');
+    });
+
+    it('should not apply an update when the expectedStatus guard does not match', async () => {
+      if (!supportsConcurrentUpdates) {
+        console.log('Skipping expectedStatus guard test');
+        return;
+      }
+      const workflowName = 'test-workflow';
+      const runId = `run-${randomUUID()}`;
+
+      await workflowsStorage.persistWorkflowSnapshot({
+        workflowName,
+        runId,
+        snapshot: { status: 'running', context: {} } as any,
+      });
+
+      const updated = await workflowsStorage.updateWorkflowState({
+        workflowName,
+        runId,
+        opts: { status: 'success', expectedStatus: 'suspended' },
+      });
+
+      expect(updated).toBeUndefined();
+
+      const persisted = await workflowsStorage.loadWorkflowSnapshot({ workflowName, runId });
+      expect(persisted?.status).toBe('running');
+    });
+
+    it('should let exactly one of many concurrent expectedStatus updates win', async () => {
+      if (!supportsConcurrentUpdates) {
+        console.log('Skipping expectedStatus guard test');
+        return;
+      }
+      const workflowName = 'test-workflow';
+      const runId = `run-${randomUUID()}`;
+
+      await workflowsStorage.persistWorkflowSnapshot({
+        workflowName,
+        runId,
+        snapshot: { status: 'suspended', context: {}, suspendedPaths: { 'step-1': [0] } } as any,
+      });
+
+      // This is the property the resume claim depends on: N racing claims, exactly one winner.
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          workflowsStorage.updateWorkflowState({
+            workflowName,
+            runId,
+            opts: { status: 'running', expectedStatus: 'suspended' },
+          }),
+        ),
+      );
+
+      expect(results.filter(result => result !== undefined)).toHaveLength(1);
     });
 
     it('should update workflow results in snapshot', async () => {

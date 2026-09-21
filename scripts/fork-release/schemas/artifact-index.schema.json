@@ -23,7 +23,7 @@
       "required": ["node", "pnpm"],
       "properties": {
         "node": { "const": "22.23.1" },
-        "pnpm": { "const": "11.13.1" }
+        "pnpm": { "const": "11.21.0" }
       }
     },
     "packages": {

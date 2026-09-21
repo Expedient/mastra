@@ -34,8 +34,8 @@ export function AgentToolsDetails({ agentName, tools }: AgentToolsDetailsProps) 
             size="sm"
             className="pointer-events-auto"
             aria-label={`Show ${toolCount} for ${agentName}`}
+            icon={<ToolsIcon aria-hidden="true" />}
           >
-            <ToolsIcon aria-hidden="true" />
             <span>{toolEntries.length}</span>
           </Button>
         }
@@ -56,7 +56,7 @@ export function AgentToolsDetails({ agentName, tools }: AgentToolsDetailsProps) 
           >
             {toolEntries.map(([toolKey, tool]) => (
               <li key={toolKey} className="grid gap-1">
-                <span className="overflow-wrap-anywhere text-ui-sm text-neutral5 font-medium">
+                <span className="overflow-wrap-anywhere text-ui-sm text-foreground font-medium">
                   {tool.id || toolKey}
                 </span>
                 {tool.description ? (

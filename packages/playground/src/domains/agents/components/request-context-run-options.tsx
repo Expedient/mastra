@@ -87,8 +87,8 @@ function ModeSwitcher({ mode, onModeChange }: { mode: InputMode; onModeChange: (
         aria-pressed={mode === 'form'}
         onClick={() => onModeChange('form')}
         className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
-          mode === 'form' ? 'bg-surface3 text-neutral5' : 'text-neutral3 hover:text-neutral5',
+          'flex items-center gap-1.5 px-2 py-1 rounded text-ui-sm transition-colors',
+          mode === 'form' ? 'bg-surface3 text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
       >
         <Icon size="sm">
@@ -101,8 +101,8 @@ function ModeSwitcher({ mode, onModeChange }: { mode: InputMode; onModeChange: (
         aria-pressed={mode === 'json'}
         onClick={() => onModeChange('json')}
         className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
-          mode === 'json' ? 'bg-surface3 text-neutral5' : 'text-neutral3 hover:text-neutral5',
+          'flex items-center gap-1.5 px-2 py-1 rounded text-ui-sm transition-colors',
+          mode === 'json' ? 'bg-surface3 text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
       >
         <Icon size="sm">

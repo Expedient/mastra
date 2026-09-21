@@ -11,9 +11,12 @@ import type { z } from 'zod';
 import type { ActorSignal } from '../../auth/authorization';
 import type { BackgroundTaskManager } from '../../background-tasks/manager';
 import type { AgentBackgroundConfig } from '../../background-tasks/types';
+import type { ScoringFilter } from '../../evals/predicate';
 import type { SystemMessage } from '../../llm';
 import type { ProviderOptions } from '../../llm/model/provider-options';
 import type { MastraLanguageModel } from '../../llm/model/shared.types';
+import type { ToolCallConcurrency } from '../../loop/types';
+import type { Mastra } from '../../mastra';
 import type { MastraMemory } from '../../memory/memory';
 import type { MemoryConfig } from '../../memory/types';
 import type { AIModelGenerationSpan, Span, SpanType, TracingContext, TracingOptions } from '../../observability';
@@ -23,6 +26,7 @@ import type { RequestContext } from '../../request-context';
 import type { ChunkType } from '../../stream/types';
 import type {
   CoreTool,
+  MCPToolExecutionContext,
   RequireToolApproval,
   ToolPayloadTransformPolicy,
   ToolPayloadTransformTarget,
@@ -105,6 +109,8 @@ export interface SerializableScorerEntry {
   scorerName: string;
   /** Optional sampling configuration */
   sampling?: SerializableScoringSamplingConfig;
+  /** Optional eligibility filter (JSON-safe predicate, survives round-trips as-is) */
+  filter?: ScoringFilter;
 }
 
 /**
@@ -138,6 +144,8 @@ export interface SerializableStructuredOutput {
   schema?: JSONSchema7;
   /** Whether to use JSON prompt injection instead of native response format */
   jsonPromptInjection?: boolean | 'system' | 'inline' | 'auto';
+  /** Caller-supplied instructions (see `StructuredOutputOptionsBase.instructions`) */
+  instructions?: string;
   /** Whether to use the parent agent's model for structuring */
   useAgent?: boolean;
   /** Model config for a dedicated structuring model (if different from the main model) */
@@ -179,8 +187,8 @@ export interface SerializableDurableOptions {
   modelSettings?: SerializableModelSettings;
   /** Whether to require tool approval globally */
   requireToolApproval?: boolean;
-  /** Concurrency limit for parallel tool calls */
-  toolCallConcurrency?: number;
+  /** Concurrency limit / strategy for parallel tool calls (JSON-safe union) */
+  toolCallConcurrency?: ToolCallConcurrency;
   /** Whether to auto-resume suspended tools */
   autoResumeSuspendedTools?: boolean;
   /** Maximum processor retries per generation */
@@ -199,6 +207,11 @@ export interface SerializableDurableOptions {
   skipBgTaskWait?: boolean;
   /** When true, background tasks are disabled for this run (the registry will not receive a BackgroundTaskManager). */
   disableBackgroundTasks?: boolean;
+  /** Execution-scoped background dispatch policy for delegated agents. */
+  backgroundTaskPolicy?: {
+    allowToolDispatch: boolean;
+    allowDelegationDispatch: boolean;
+  };
   /** Tracing options forwarded to the agent/model spans (metadata, tags, requestContextKeys, parentSpanId, hideInput/hideOutput, traceId). */
   tracingOptions?: TracingOptions;
   /**
@@ -500,6 +513,8 @@ export interface AgentSuspendedEventData {
 export interface AgentAbortEventData {
   /** Steps accumulated up to the point of abort */
   steps: unknown[];
+  /** Assistant text streamed before the abort */
+  text?: string;
 }
 
 /**
@@ -553,8 +568,24 @@ export interface RunRegistryEntry {
    * registered on the Mastra instance instead of trusting the entry.
    */
   isPlaceholder?: boolean;
-  /** Resolved tools with execute functions */
+  /**
+   * Resolved tools with execute functions.
+   *
+   * After a durable LLM step runs input processors this holds the per-step
+   * snapshot the model was shown (e.g. only `search_tools` when a
+   * ToolSearchProcessor withholds searchable tools), so the durable tool-call
+   * step resolves exactly what the model could call. Steps seed from
+   * `baseTools` instead, so a narrowed snapshot never shrinks the toolset
+   * later steps (and their processors) start from.
+   */
   tools: Record<string, CoreTool>;
+  /**
+   * The complete resolved toolset for the run, before any per-step processor
+   * narrowing. Set by the durable LLM step the first time it overwrites `tools`
+   * with a per-step snapshot; `resolveRuntimeDependencies` prefers it over
+   * `tools` when seeding a step (issue #22933).
+   */
+  baseTools?: Record<string, CoreTool>;
   /** SaveQueueManager for message persistence (undefined when memory is not configured) */
   saveQueueManager?: SaveQueueManager;
   /** Memory instance for thread creation and message persistence */
@@ -567,6 +598,8 @@ export interface RunRegistryEntry {
   workspace?: Workspace;
   /** Request context for forwarding auth data, feature flags, etc. to tools */
   requestContext?: RequestContext;
+  /** MCP protocol context for in-process tool execution (non-serializable). */
+  mcp?: MCPToolExecutionContext;
   /** Cleanup function to call when run completes */
   cleanup?: () => void;
   /** MessageList for tracking conversation messages (non-serializable) */
@@ -742,6 +775,11 @@ export interface RunRegistryEntry {
    */
   workflowExecution?: Promise<unknown>;
   /**
+   * Mastra instance that owns this in-process run. Used during shutdown to
+   * wait only for executions that may still need this instance's storage.
+   */
+  mastra?: Mastra;
+  /**
    * Tripwire data from `processInput` (initial input processing). When an
    * input processor calls `abort()` during `runInputProcessors` in
    * `preparation.ts`, the TripWire is caught and stored here instead of
@@ -779,6 +817,15 @@ export interface RunRegistryEntry {
    * and structured output degrades to raw text.
    */
   structuredOutput?: StructuredOutputOptions;
+  /**
+   * Call-time `returnScorerData` flag. Also serialized into
+   * `SerializableDurableOptions`, but parked here too so warm resume() and
+   * observe() can rebuild `scoringData` on their client-side
+   * `MastraModelOutput` without re-reading the snapshot. Cross-process
+   * engines lose this slot; cold resume restores it from the persisted
+   * workflow input instead.
+   */
+  returnScorerData?: boolean;
 }
 
 /**

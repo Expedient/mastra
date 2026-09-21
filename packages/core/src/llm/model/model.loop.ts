@@ -127,13 +127,16 @@ export class MastraLLMVNext extends MastraBase {
     toolCallConcurrency,
     _internal,
     agentId,
+    agentVersionId,
     agentName,
     toolCallId,
     requestContext,
     actor,
+    mcp,
     methodType,
     includeRawChunks,
     experimentalTransform,
+    hideSignals,
     autoResumeSuspendedTools,
     maxProcessorRetries,
     processorStates,
@@ -218,7 +221,7 @@ export class MastraLLMVNext extends MastraBase {
         messageList,
         models: this.#models,
         logger: this.logger,
-        tools: tools as Tools,
+        tools,
         stopWhen: stopWhenToUse,
         toolChoice,
         modelSettings,
@@ -234,12 +237,15 @@ export class MastraLLMVNext extends MastraBase {
         requireToolApproval,
         toolCallConcurrency,
         agentId,
+        agentVersionId,
         agentName,
         requestContext,
         actor,
+        mcp,
         methodType,
         includeRawChunks,
         experimentalTransform,
+        hideSignals,
         autoResumeSuspendedTools,
         maxProcessorRetries,
         processorStates,
@@ -301,7 +307,7 @@ export class MastraLLMVNext extends MastraBase {
             }
           },
 
-          onFinish: async props => {
+          onFinish: async (props, context) => {
             // End the model generation span BEFORE calling the user's onFinish callback
             // This ensures the model span ends before the agent span
             // Pass raw usage and providerMetadata - ModelSpanTracker will convert to UsageStats
@@ -314,6 +320,15 @@ export class MastraLLMVNext extends MastraBase {
                 sources: props?.sources,
                 text: props?.text,
                 warnings: props?.warnings,
+                // Flatten tool-call chunks so exporters (e.g. PostHog) see the same
+                // { toolCallId, toolName, args } shape as the non-loop path.
+                toolCalls: props?.toolCalls?.length
+                  ? props.toolCalls.map(tc => ({
+                      toolCallId: tc.payload.toolCallId,
+                      toolName: tc.payload.toolName,
+                      args: tc.payload.args,
+                    }))
+                  : undefined,
               },
               attributes: {
                 finishReason: props?.finishReason,
@@ -329,7 +344,7 @@ export class MastraLLMVNext extends MastraBase {
             });
 
             try {
-              await options?.onFinish?.({ ...props, runId: runId! });
+              await options?.onFinish?.({ ...props, runId: runId! }, context);
             } catch (e: unknown) {
               const mastraError = new MastraError(
                 {

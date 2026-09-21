@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { ActorSignal } from '../../auth';
 import type { RequestContext } from '../../di';
 import { MastraError, ErrorDomain, ErrorCategory, getErrorFromUnknown } from '../../error';
@@ -32,6 +31,7 @@ import type {
 import {
   validateStepInput,
   createDeprecationProxy,
+  omitPriorCompletionFields,
   runCountDeprecationMessage,
   validateStepResumeData,
   validateStepSuspendData,
@@ -65,6 +65,10 @@ export interface ExecuteStepParams extends ObservabilityContext {
   serializedStepGraph: SerializedStepFlowEntry[];
   iterationCount?: number;
   perStep?: boolean;
+  /** Authored graph entry description to attach to the step span (e.g. mapping steps) */
+  entryDescription?: string;
+  /** Authored graph entry metadata to attach to the step span (e.g. mapping steps) */
+  entryMetadata?: Record<string, any>;
 }
 
 export async function executeStep(
@@ -86,17 +90,24 @@ export async function executeStep(
     abortController,
     requestContext,
     actor,
-    skipEmits = false,
+    skipEmits: skipEmitsParam = false,
     outputWriter,
     disableScorers,
     serializedStepGraph,
     iterationCount,
     perStep,
+    entryDescription,
+    entryMetadata,
     ...rest
   } = params;
+  const skipEmits = skipEmitsParam || engine.options.emitStepEvents === false;
   const observabilityContext = resolveObservabilityContext(rest);
 
-  const stepCallId = randomUUID();
+  const stepCallId = globalThis.crypto.randomUUID();
+  const nestedRunId =
+    step.component === 'WORKFLOW' && executionContext.foreachIndex !== undefined
+      ? globalThis.crypto.randomUUID()
+      : undefined;
 
   const { inputData, validationError: inputValidationError } = await validateStepInput({
     prevOutput,
@@ -157,7 +168,9 @@ export async function executeStep(
   const resumeTime = resumeDataToUse ? Date.now() : undefined;
 
   const stepInfo = {
-    ...stepResults[step.id],
+    // Drop prior completion/suspend fields so they cannot linger across re-entry
+    // (e.g. suspendPayload/suspendedAt after resume, or startedAt > suspendedAt on loops).
+    ...omitPriorCompletionFields((stepResults[step.id] ?? {}) as Record<string, unknown>),
     ...(resumeDataToUse ? { resumePayload: resumeDataToUse } : { payload: inputData }),
     ...(startTime ? { startedAt: startTime } : {}),
     ...(resumeTime ? { resumedAt: resumeTime } : {}),
@@ -177,6 +190,12 @@ export async function executeStep(
       entityType: EntityType.WORKFLOW_STEP,
       entityId: step.id,
       input: inputData,
+      ...((entryDescription || entryMetadata) && {
+        attributes: {
+          ...(entryDescription ? { entryDescription } : {}),
+          ...(entryMetadata ? { entryMetadata } : {}),
+        },
+      }),
       tracingPolicy: engine.options?.tracingPolicy,
       requestContext,
     },
@@ -262,7 +281,10 @@ export async function executeStep(
         }
       }
 
-      const stepResult = { ...stepInfo, ...workflowResult } as StepResult<any, any, any, any>;
+      const stepResult = {
+        ...omitPriorCompletionFields(stepInfo),
+        ...workflowResult,
+      } as StepResult<any, any, any, any>;
       return {
         result: stepResult,
         stepResults: { [step.id]: stepResult },
@@ -335,7 +357,7 @@ export async function executeStep(
         : undefined;
 
       const output = await runStep({
-        runId,
+        runId: nestedRunId ?? runId,
         resourceId,
         workflowId,
         mastra: mastraForStep,
@@ -516,7 +538,9 @@ export async function executeStep(
       await emitStepResultEvents({
         stepId: step.id,
         stepCallId,
-        execResults: { ...stepInfo, ...execResults } as StepResult<any, any, any, any>,
+        // Emit uses the same omit+merge as the persisted stepResult below so
+        // watch events and snapshots agree on cleared prior completion fields.
+        execResults: { ...omitPriorCompletionFields(stepInfo), ...execResults } as StepResult<any, any, any, any>,
         pubsub,
         runId,
       });
@@ -536,7 +560,14 @@ export async function executeStep(
     });
   }
 
-  const stepResult = { ...stepInfo, ...execResults } as StepResult<any, any, any, any>;
+  if (nestedRunId) {
+    execResults.metadata = { ...execResults.metadata, nestedRunId };
+  }
+
+  const stepResult = {
+    ...omitPriorCompletionFields(stepInfo),
+    ...execResults,
+  } as StepResult<any, any, any, any>;
 
   return {
     result: stepResult,

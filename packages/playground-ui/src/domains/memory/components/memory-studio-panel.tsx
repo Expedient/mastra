@@ -51,14 +51,15 @@ export function MemoryStudioPanel({
   const [manualOMRecordId, setManualOMRecordId] = useState<string | null>(null);
 
   const markers = useMemo(() => extractOmMarkers(messages), [messages]);
-  const tDomain = useMemo(() => {
-    if (messages.length === 0) return { tMin: 0, tMax: 1 };
-    return timestampsToTDomain(messages.map(m => new Date(m.createdAt).toISOString()));
-  }, [messages]);
+  // timestampsToTDomain already returns the unit domain for an empty list.
+  const tDomain = useMemo(
+    () => timestampsToTDomain(messages.map(m => new Date(m.createdAt).toISOString())),
+    [messages],
+  );
   const windowState = useMemo(() => getLatestThreadContextWindowState({ markers, omRecords }), [markers, omRecords]);
 
-  const memoryTokens = contextWindow?.memoryTokens ?? windowState?.memoryTokens;
-  const memoryThreshold = contextWindow?.memoryThreshold ?? windowState?.memoryThreshold;
+  const memoryTokens = contextWindow?.memoryTokens ?? windowState.memoryTokens;
+  const memoryThreshold = contextWindow?.memoryThreshold ?? windowState.memoryThreshold;
 
   // Zoom range (epoch ms) is owned here so it can both scope the FlameGraph
   // charts and filter the observation list. It resets to the full domain
@@ -97,7 +98,7 @@ export function MemoryStudioPanel({
         <Button type="button" variant="ghost" size="icon-sm" tooltip="Back to memory" onClick={() => onClose?.()}>
           <ArrowLeftIcon />
         </Button>
-        <span className="text-neutral6 flex min-w-0 items-center gap-1.5">
+        <span className="text-foreground flex min-w-0 items-center gap-1.5">
           <MemoryIcon className="size-4 shrink-0" />
           <Txt as="span" variant="ui-sm" className="font-medium">
             Observational memory
@@ -123,8 +124,8 @@ export function MemoryStudioPanel({
           </div>
           <div className="border-border1 border-t">
             <ThreadContextProgress
-              messageTokens={contextWindow?.messageTokens ?? windowState?.messageTokens}
-              messageThreshold={contextWindow?.messageThreshold ?? windowState?.messageThreshold}
+              messageTokens={contextWindow?.messageTokens ?? windowState.messageTokens}
+              messageThreshold={contextWindow?.messageThreshold ?? windowState.messageThreshold}
               memoryTokens={memoryTokens}
               memoryThreshold={memoryThreshold}
               memoryLabel="Observations"

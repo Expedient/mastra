@@ -135,31 +135,25 @@ export function MCPClientList() {
           <SubSectionHeader title="MCP Clients" icon={<LaptopMinimal />} />
 
           {!readOnly && (
-            <Button variant="ghost" size="sm" onClick={() => setIsCreateOpen(true)}>
-              <Icon size="sm">
-                <PlusIcon />
-              </Icon>
+            <Button variant="ghost" size="sm" onClick={() => setIsCreateOpen(true)} icon={<PlusIcon />}>
               Add MCP Client
             </Button>
           )}
         </Section.Header>
 
         {mcpClients.length === 0 && (
-          <div className="border-border2 rounded-xl border border-dashed py-8 text-center">
+          <div className="border-border2 rounded-xl border border-dashed py-5 text-center">
             <EmptyState
               className="py-4!"
               iconSlot={
-                <div className="text-neutral3 bg-surface3 flex size-6 items-center justify-center rounded-full p-2">
+                <div className="text-muted-foreground bg-surface3 flex size-6 items-center justify-center rounded-full p-2">
                   <LaptopMinimal className="size-6" />
                 </div>
               }
               titleSlot="No MCP clients configured yet."
               descriptionSlot="Add one to get started."
               actionSlot={
-                <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)}>
-                  <Icon size="sm">
-                    <PlusIcon />
-                  </Icon>
+                <Button variant="outline" size="sm" onClick={() => setIsCreateOpen(true)} icon={<PlusIcon />}>
                   Add MCP Client
                 </Button>
               }
@@ -204,10 +198,8 @@ export function MCPClientList() {
                         e.stopPropagation();
                         handleRemove(index);
                       }}
+                      icon={<XIcon />}
                     >
-                      <Icon>
-                        <XIcon />
-                      </Icon>
                       Remove
                     </Button>
                   )}

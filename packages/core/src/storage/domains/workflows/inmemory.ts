@@ -7,9 +7,11 @@ import type {
   StorageListWorkflowRunsInput,
   UpdateWorkflowStateOptions,
 } from '../../types';
+import { matchesExpectedWorkflowStatus } from '../../types';
 import { createEmptyWorkflowSnapshot, mergeWorkflowStepResult } from '../../workflow-snapshot';
 import type { InMemoryDB } from '../inmemory-db';
 import { WorkflowsStorage } from './base';
+import { getSnapshotMemoryInfo } from './snapshot-memory-info';
 
 /**
  * Deep-clone in-memory workflow state.
@@ -265,7 +267,12 @@ export class WorkflowsInMemory extends WorkflowsStorage {
       throw new Error(`Snapshot not found for runId ${runId}`);
     }
 
-    snapshot = { ...snapshot, ...opts };
+    const { expectedStatus, ...state } = opts;
+    if (!matchesExpectedWorkflowStatus(snapshot.status, expectedStatus)) {
+      return;
+    }
+
+    snapshot = { ...snapshot, ...state };
     this.db.workflows.set(key, {
       ...run,
       snapshot: snapshot,
@@ -295,7 +302,9 @@ export class WorkflowsInMemory extends WorkflowsStorage {
     const data: StorageWorkflowRun = {
       workflow_name: workflowName,
       run_id: runId,
-      resourceId,
+      // A re-persist without a resourceId (e.g. resume) must not erase a
+      // previously-set value. Matches the persistent stores' COALESCE upserts.
+      resourceId: resourceId ?? existing?.resourceId,
       snapshot,
       // Preserve the original creation time when re-persisting an existing run; only set it
       // on first insert. Otherwise listWorkflowRuns ordering and date filters drift to the
@@ -333,6 +342,7 @@ export class WorkflowsInMemory extends WorkflowsStorage {
     perPage,
     page,
     resourceId,
+    threadId,
     status,
   }: StorageListWorkflowRunsInput = {}): Promise<WorkflowRuns> {
     if (page !== undefined && page < 0) {
@@ -376,6 +386,25 @@ export class WorkflowsInMemory extends WorkflowsStorage {
       runs = runs.filter((run: any) => new Date(run.createdAt).getTime() <= toDate.getTime());
     }
     if (resourceId) runs = runs.filter((run: any) => run.resourceId === resourceId);
+    if (threadId) {
+      runs = runs.filter((run: any) => {
+        let snapshot: WorkflowRunState | string = run?.snapshot!;
+
+        if (!snapshot) {
+          return false;
+        }
+
+        if (typeof snapshot === 'string') {
+          try {
+            snapshot = JSON.parse(snapshot) as WorkflowRunState;
+          } catch {
+            return false;
+          }
+        }
+
+        return getSnapshotMemoryInfo(snapshot)?.threadId === threadId;
+      });
+    }
 
     const total = runs.length;
 

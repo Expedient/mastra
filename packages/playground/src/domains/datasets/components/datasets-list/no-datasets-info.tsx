@@ -20,19 +20,17 @@ export const NoDatasetsInfo = ({ onCreateClick }: NoDatasetsInfoProps = {}) => (
       actionSlot={
         <div className="flex flex-col items-center gap-2">
           {onCreateClick && (
-            <Button variant="primary" onClick={onCreateClick}>
-              <Plus />
+            <Button variant="primary" onClick={onCreateClick} icon={<Plus />}>
               Create Dataset
             </Button>
           )}
           <Button
             variant="ghost"
-            as="a"
-            href="https://mastra.ai/en/docs/datasets/overview"
-            target="_blank"
-            rel="noopener noreferrer"
+            render={<a href="https://mastra.ai/docs/evals/datasets" target="_blank" rel="noopener noreferrer" />}
+
+            icon={<ExternalLinkIcon />}
           >
-            Datasets Documentation <ExternalLinkIcon />
+            Datasets Documentation
           </Button>
         </div>
       }

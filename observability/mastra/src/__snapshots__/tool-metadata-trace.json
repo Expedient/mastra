@@ -114,7 +114,16 @@
               "reasoning": [],
               "sources": [],
               "text": "Mock V2 stream response",
-              "warnings": []
+              "warnings": [],
+              "toolCalls": [
+                {
+                  "toolCallId": "call-metadata-1",
+                  "toolName": "metadataTool",
+                  "args": {
+                    "input": "some data"
+                  }
+                }
+              ]
             }
           },
           "children": [
@@ -196,7 +205,9 @@
                       "model": "mock-model-id",
                       "provider": "mock-provider",
                       "streaming": true,
-                      "parameters": {},
+                      "parameters": {
+                        "maxRetries": 0
+                      },
                       "availableTools": ["metadataTool"],
                       "toolChoice": "auto",
                       "usage": {
@@ -210,7 +221,8 @@
                         }
                       },
                       "finishReason": "tool-calls",
-                      "completionStartTime": "<date>"
+                      "completionStartTime": "<date>",
+                      "responseModel": "mock-model-id"
                     },
                     "metadata": {
                       "runId": "<runId-1>",
@@ -399,7 +411,9 @@
                       "model": "mock-model-id",
                       "provider": "mock-provider",
                       "streaming": true,
-                      "parameters": {},
+                      "parameters": {
+                        "maxRetries": 0
+                      },
                       "availableTools": ["metadataTool"],
                       "toolChoice": "auto",
                       "usage": {
@@ -413,7 +427,8 @@
                         }
                       },
                       "finishReason": "stop",
-                      "completionStartTime": "<date>"
+                      "completionStartTime": "<date>",
+                      "responseModel": "mock-model-id"
                     },
                     "metadata": {
                       "runId": "<runId-1>",

@@ -35,7 +35,7 @@ function createAgent() {
 // ===========================================================================
 
 describe('AgentController workspace — static instance', () => {
-  it('createSession succeeds with a static workspace and initializes it', async () => {
+  it('attaches a static workspace without initializing it', async () => {
     const ws = createMockWorkspace();
     const initSpy = vi.spyOn(ws, 'init');
     const controller = new AgentController({
@@ -46,9 +46,19 @@ describe('AgentController workspace — static instance', () => {
     });
     await controller.init();
 
-    const session = await controller.createSession({ id: 'test-session', ownerId: 'test-owner' });
-    expect(session).toBeDefined();
-    expect(initSpy).toHaveBeenCalled();
+    const session = await controller.createSession({
+      id: 'test-session',
+      ownerId: 'test-owner',
+      threadId: 'test-thread',
+    });
+
+    expect(session.getWorkspace()).toBe(ws);
+    expect(session.thread.requireId()).toBe('test-thread');
+    expect(initSpy).not.toHaveBeenCalled();
+    expect(controller.isWorkspaceReady()).toBe(false);
+
+    await ws.init();
+    expect(controller.isWorkspaceReady()).toBe(true);
   });
 
   it('createSession succeeds when workspace is provided as a session override', async () => {
@@ -74,8 +84,9 @@ describe('AgentController workspace — static instance', () => {
 // ===========================================================================
 
 describe('AgentController workspace — dynamic factory', () => {
-  it('factory is called during createSession with requestContext and mastra', async () => {
+  it('resolves the factory during createSession without initializing its workspace', async () => {
     const ws = createMockWorkspace('dynamic-ws');
+    const initSpy = vi.spyOn(ws, 'init');
     const factory = vi.fn().mockResolvedValue(ws);
     const controller = new AgentController({
       id: 'test',
@@ -86,7 +97,7 @@ describe('AgentController workspace — dynamic factory', () => {
     await controller.init();
 
     const session = await controller.createSession({ id: 'test-session', ownerId: 'test-owner' });
-    expect(session).toBeDefined();
+    expect(session.getWorkspace()).toBe(ws);
     expect(factory).toHaveBeenCalledTimes(1);
     expect(factory).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -94,6 +105,7 @@ describe('AgentController workspace — dynamic factory', () => {
         mastra: expect.anything(),
       }),
     );
+    expect(initSpy).not.toHaveBeenCalled();
   });
 
   it('factory is invoked per-session, not cached across sessions', async () => {
@@ -114,7 +126,7 @@ describe('AgentController workspace — dynamic factory', () => {
     expect(factory).toHaveBeenCalledTimes(2);
   });
 
-  it('resolveWorkspace provides session state to the factory', async () => {
+  it('the factory reads session state through the request context', async () => {
     const ws = createMockWorkspace('dynamic-ws');
     // Simulates a dynamic workspace factory that reads session state via
     // getState() — the recommended accessor on AgentControllerRequestContext.
@@ -137,11 +149,49 @@ describe('AgentController workspace — dynamic factory', () => {
 
     const session = await controller.createSession({ id: 'test-session', ownerId: 'test-owner' });
 
-    // resolveWorkspace is called outside the request flow (e.g. from slash
-    // commands). createSession does not cache the resolved workspace on
-    // this.workspace, so this re-invokes the factory with a fresh context.
-    const resolved = await controller.resolveWorkspace({ session });
-    expect(resolved).toBe(ws);
+    // Callers outside the request flow (e.g. slash commands) get the instance
+    // the session already runs against, so the factory is not asked twice.
+    expect(await controller.resolveWorkspace({ session })).toBe(ws);
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolveWorkspace does not pin one session workspace onto the controller', async () => {
+    const wsA = createMockWorkspace('ws-a');
+    const wsB = createMockWorkspace('ws-b');
+    const factory = vi.fn(async ({ requestContext }) => {
+      const projectPath = requestContext.get('controller').getState().projectPath;
+      return projectPath === '/repo-a' ? wsA : wsB;
+    });
+    const controller = new AgentController({
+      id: 'test',
+      storage: new InMemoryStore(),
+      modes: [{ id: 'default', name: 'Default', default: true, agent: createAgent() }],
+      workspace: factory,
+    });
+    await controller.init();
+
+    const sessionA = await controller.createSession({
+      id: 'session-a',
+      ownerId: 'test-owner',
+      resourceId: 'resource-a',
+      tags: { projectPath: '/repo-a' },
+    });
+    await controller.resolveWorkspace({ session: sessionA });
+
+    const sessionB = await controller.createSession({
+      id: 'session-b',
+      ownerId: 'test-owner',
+      resourceId: 'resource-b',
+      tags: { projectPath: '/repo-b' },
+    });
+
+    expect(sessionA.getWorkspace()).toBe(wsA);
+    expect(sessionB.getWorkspace()).toBe(wsB);
+    expect(await controller.resolveWorkspace({ session: sessionA })).toBe(wsA);
+    expect(await controller.resolveWorkspace({ session: sessionB })).toBe(wsB);
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(controller.getWorkspace()).toBeUndefined();
+    expect(controller.isWorkspaceReady()).toBe(true);
   });
 });
 
@@ -166,8 +216,8 @@ describe('AgentController createSession — workspace overrides', () => {
       workspace: sessionWs,
     });
 
-    expect(initSpy).toHaveBeenCalledTimes(1);
-    expect(session).toBeDefined();
+    expect(session.getWorkspace()).toBe(sessionWs);
+    expect(initSpy).not.toHaveBeenCalled();
   });
 
   it('falls back to AgentController-level workspace when no override is provided', async () => {
@@ -180,16 +230,14 @@ describe('AgentController createSession — workspace overrides', () => {
       workspace: controllerWs,
     });
     await controller.init();
-    initSpy.mockClear();
 
     const session = await controller.createSession({
       id: 'test-session',
       ownerId: 'test-owner',
     });
 
-    expect(session).toBeDefined();
-    // The controller-level workspace is initialized for the session.
-    expect(initSpy).toHaveBeenCalled();
+    expect(session.getWorkspace()).toBe(controllerWs);
+    expect(initSpy).not.toHaveBeenCalled();
   });
 
   it('per-session workspace override takes precedence over controller-level', async () => {
@@ -204,8 +252,6 @@ describe('AgentController createSession — workspace overrides', () => {
       workspace: controllerWs,
     });
     await controller.init();
-    controllerInitSpy.mockClear();
-    sessionInitSpy.mockClear();
 
     const session = await controller.createSession({
       id: 'test-session',
@@ -213,9 +259,8 @@ describe('AgentController createSession — workspace overrides', () => {
       workspace: sessionWs,
     });
 
-    expect(session).toBeDefined();
-    // The session-level workspace is initialized, not the controller-level one.
-    expect(sessionInitSpy).toHaveBeenCalled();
+    expect(session.getWorkspace()).toBe(sessionWs);
+    expect(sessionInitSpy).not.toHaveBeenCalled();
     expect(controllerInitSpy).not.toHaveBeenCalled();
   });
 });
@@ -253,8 +298,8 @@ describe('AgentController createSession — workspace isolation', () => {
     expect(sessionA.getWorkspace()).toBe(wsA);
     expect(sessionB.getWorkspace()).toBe(wsB);
     expect(sessionA.getWorkspace()).not.toBe(sessionB.getWorkspace());
-    expect(initSpyA).toHaveBeenCalled();
-    expect(initSpyB).toHaveBeenCalled();
+    expect(initSpyA).not.toHaveBeenCalled();
+    expect(initSpyB).not.toHaveBeenCalled();
   });
 
   it('one session workspace override does not leak into another session', async () => {
@@ -286,9 +331,9 @@ describe('AgentController createSession — workspace isolation', () => {
     expect(sessionB.getWorkspace()).toBeUndefined();
     expect(sessionB.getWorkspace()).not.toBe(wsA);
 
-    // Session A still has its own workspace (init was called)
+    // Session A still has its own workspace without initializing it.
     expect(sessionA.getWorkspace()).toBe(wsA);
-    expect(initSpyA).toHaveBeenCalled();
+    expect(initSpyA).not.toHaveBeenCalled();
   });
 });
 

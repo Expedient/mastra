@@ -8,10 +8,11 @@ import type {
   UIMessage as UIMessageV6,
   UIMessageStreamOptions as UIMessageStreamOptionsV6,
 } from '@internal/ai-v6';
+import type { UIMessage as UIMessageV7, UIMessageStreamOptions as UIMessageStreamOptionsV7 } from '@internal/ai-v7';
 import type { MastraModelOutput, ChunkType, MastraAgentNetworkStream, WorkflowRunOutput } from '@mastra/core/stream';
 import type { MastraWorkflowStream, Step, WorkflowResult } from '@mastra/core/workflows';
 import type { ZodObject, ZodType } from 'zod/v4';
-import type { V6UIMessageStream } from './public-types';
+import type { V6UIMessageStream, V7UIMessageStream } from './public-types';
 import { applyMastraStreamTransforms } from './smooth-stream';
 import type { MastraStreamTransformOptions } from './smooth-stream';
 import {
@@ -38,6 +39,10 @@ type WorkflowStreamOptionsV6 = WorkflowStreamOptionsBase & {
   version: 'v6';
 };
 
+type WorkflowStreamOptionsV7 = WorkflowStreamOptionsBase & {
+  version: 'v7';
+};
+
 type NetworkStreamOptionsBase = {
   from: 'network';
 };
@@ -50,6 +55,10 @@ type NetworkStreamOptionsV6 = NetworkStreamOptionsBase & {
   version: 'v6';
 };
 
+type NetworkStreamOptionsV7 = NetworkStreamOptionsBase & {
+  version: 'v7';
+};
+
 type AgentStreamOptionsBase = {
   from: 'agent';
   lastMessageId?: string;
@@ -57,6 +66,8 @@ type AgentStreamOptionsBase = {
   sendFinish?: boolean;
   sendReasoning?: boolean;
   sendSources?: boolean;
+  /** When true, sub-agent runs are emitted as data-tool-agent parts with ancestry metadata. */
+  includeSubAgentMetadata?: boolean;
   /** Experimental transforms applied to Mastra chunks before AI SDK UI conversion. */
   experimentalTransform?: MastraStreamTransformOptions<any>;
 };
@@ -73,9 +84,16 @@ type AgentStreamOptionsV6 = AgentStreamOptionsBase & {
   onError?: UIMessageStreamOptionsV6<UIMessageV6>['onError'];
 };
 
+type AgentStreamOptionsV7 = AgentStreamOptionsBase & {
+  version: 'v7';
+  messageMetadata?: UIMessageStreamOptionsV7<UIMessageV7>['messageMetadata'];
+  onError?: UIMessageStreamOptionsV7<UIMessageV7>['onError'];
+};
+
 type ToAISDKStreamOptionsV5 = WorkflowStreamOptionsV5 | NetworkStreamOptionsV5 | AgentStreamOptionsV5;
 type ToAISDKStreamOptionsV6 = WorkflowStreamOptionsV6 | NetworkStreamOptionsV6 | AgentStreamOptionsV6;
-type ToAISDKStreamOptions = ToAISDKStreamOptionsV5 | ToAISDKStreamOptionsV6;
+type ToAISDKStreamOptionsV7 = WorkflowStreamOptionsV7 | NetworkStreamOptionsV7 | AgentStreamOptionsV7;
+type ToAISDKStreamOptions = ToAISDKStreamOptionsV5 | ToAISDKStreamOptionsV6 | ToAISDKStreamOptionsV7;
 
 export function toAISdkV5Stream<
   TOutput extends ZodType<any>,
@@ -150,6 +168,7 @@ export function toAISdkV5Stream(
       sendSources: options.sendSources,
       messageMetadata: options.messageMetadata,
       onError: options.onError,
+      includeSubAgentMetadata: options.includeSubAgentMetadata,
     }),
   ) as ReadableStream<InferUIMessageChunkV5<UIMessageV5>>;
 }
@@ -203,6 +222,29 @@ export function toAISdkStream<TOutput>(
   stream: MastraModelOutput<TOutput>,
   options: AgentStreamOptionsV6,
 ): V6UIMessageStream;
+export function toAISdkStream<
+  TOutput extends ZodType<any>,
+  TInput extends ZodType<any>,
+  TSteps extends Step<string, any, any, any, any, any>[],
+  TState extends ZodObject<any>,
+>(stream: MastraWorkflowStream<TState, TInput, TOutput, TSteps>, options: WorkflowStreamOptionsV7): V7UIMessageStream;
+export function toAISdkStream<
+  TOutput extends ZodType<any>,
+  TInput extends ZodType<any>,
+  TSteps extends Step<string, any, any, any, any, any>[],
+  TState extends ZodObject<any>,
+>(
+  stream: WorkflowRunOutput<WorkflowResult<TState, TInput, TOutput, TSteps>>,
+  options: WorkflowStreamOptionsV7,
+): V7UIMessageStream;
+export function toAISdkStream<OUTPUT = undefined>(
+  stream: MastraAgentNetworkStream<OUTPUT>,
+  options: NetworkStreamOptionsV7,
+): V7UIMessageStream;
+export function toAISdkStream<TOutput>(
+  stream: MastraModelOutput<TOutput>,
+  options: AgentStreamOptionsV7,
+): V7UIMessageStream;
 export function toAISdkStream(
   stream:
     | WorkflowRunOutput<WorkflowResult<any, any, any, any>>
@@ -214,8 +256,12 @@ export function toAISdkStream(
     sendStart: true,
     sendFinish: true,
   },
-): ReadableStream<InferUIMessageChunkV5<UIMessageV5>> | V6UIMessageStream {
-  if (options.version === 'v6') {
+): ReadableStream<InferUIMessageChunkV5<UIMessageV5>> | V6UIMessageStream | V7UIMessageStream {
+  // The AI SDK v7 UI message stream is emitted through the v6 chunk conversion path: the
+  // v6 chunk shape is a subset of v7's, which is the same assumption MessageList makes for
+  // its AI SDK v7 UI output. Only the public types differ, so they are sourced from
+  // `@internal/ai-v7` while the runtime transformers stay shared.
+  if (options.version === 'v6' || options.version === 'v7') {
     const from = options.from;
 
     if (from === 'workflow') {
@@ -249,8 +295,9 @@ export function toAISdkStream(
         sendFinish: options.sendFinish,
         sendReasoning: options.sendReasoning,
         sendSources: options.sendSources,
-        messageMetadata: options.messageMetadata,
-        onError: options.onError,
+        messageMetadata: options.messageMetadata as UIMessageStreamOptionsV6<UIMessageV6>['messageMetadata'],
+        onError: options.onError as UIMessageStreamOptionsV6<UIMessageV6>['onError'],
+        includeSubAgentMetadata: options.includeSubAgentMetadata,
       }),
     ) as ReadableStream<InferUIMessageChunkV6<UIMessageV6>>;
   }
@@ -290,6 +337,7 @@ export function toAISdkStream(
       sendSources: options.sendSources,
       messageMetadata: options.messageMetadata,
       onError: options.onError,
+      includeSubAgentMetadata: options.includeSubAgentMetadata,
     }),
   ) as ReadableStream<InferUIMessageChunkV5<UIMessageV5>>;
 }

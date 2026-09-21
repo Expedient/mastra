@@ -1,4 +1,3 @@
-import type { Client, InValue } from '@libsql/client';
 import { ErrorCategory, ErrorDomain, MastraError } from '@mastra/core/error';
 import type {
   WorkflowRun,
@@ -16,11 +15,13 @@ import {
   normalizePerPage,
   TABLE_WORKFLOW_SNAPSHOT,
   TABLE_SCHEMAS,
+  matchesExpectedWorkflowStatus,
   WorkflowsStorage,
 } from '@mastra/core/storage';
 import type { WorkflowRunState, StepResult } from '@mastra/core/workflows';
 import { LibSQLDB, resolveClient } from '../../db';
 import type { LibSQLDomainConfig } from '../../db';
+import type { SqliteClient as Client, SqliteInValue as InValue } from '../../db/client';
 import { createExecuteWriteOperationWithRetry, safeStringify } from '../../db/utils';
 import { withClientWriteLock } from '../../db/write-lock';
 import { runPrune, resolveTargets } from '../../retention';
@@ -247,8 +248,14 @@ export class WorkflowsLibSQL extends WorkflowsStorage {
               throw new Error(`Snapshot not found for runId ${runId}`);
             }
 
+            const { expectedStatus, ...state } = opts;
+            if (!matchesExpectedWorkflowStatus(snapshot.status, expectedStatus)) {
+              await tx.rollback();
+              return undefined;
+            }
+
             // Merge the new options with the existing snapshot
-            const updatedSnapshot = { ...snapshot, ...opts };
+            const updatedSnapshot = { ...snapshot, ...state };
 
             // Update the snapshot within the same transaction
             await tx.execute({
@@ -301,7 +308,7 @@ export class WorkflowsLibSQL extends WorkflowsStorage {
             sql: `INSERT INTO ${TABLE_WORKFLOW_SNAPSHOT} (workflow_name, run_id, resourceId, snapshot, createdAt, updatedAt)
                 VALUES (?, ?, ?, jsonb(?), ?, ?)
                 ON CONFLICT(workflow_name, run_id)
-                DO UPDATE SET resourceId = excluded.resourceId, snapshot = excluded.snapshot, updatedAt = excluded.updatedAt`,
+                DO UPDATE SET resourceId = COALESCE(excluded.resourceId, ${TABLE_WORKFLOW_SNAPSHOT}.resourceId), snapshot = excluded.snapshot, updatedAt = excluded.updatedAt`,
             args: [workflowName, runId, resourceId ?? null, safeStringify(snapshot), createdAtValue, updatedAtValue],
           }),
         ),
@@ -398,6 +405,7 @@ export class WorkflowsLibSQL extends WorkflowsStorage {
     page,
     perPage,
     resourceId,
+    threadId,
     status,
   }: StorageListWorkflowRunsInput = {}): Promise<WorkflowRuns> {
     try {
@@ -432,6 +440,18 @@ export class WorkflowsLibSQL extends WorkflowsStorage {
         } else {
           this.logger.warn(`[${TABLE_WORKFLOW_SNAPSHOT}] resourceId column not found. Skipping resourceId filter.`);
         }
+      }
+
+      if (threadId) {
+        // The thread id lives inside the snapshot JSON, in one of two layouts. This mirrors
+        // the canonical extraction in `@mastra/core` (`getSnapshotMemoryInfo`) and must stay
+        // in lockstep with it — otherwise rows the caller would match get wrongly excluded:
+        // 1. agentic-loop: under a dynamic suspended-step key, hence the json_each() scan
+        // 2. durable loop: under the serialized workflow input at a fixed path
+        conditions.push(
+          `(EXISTS (SELECT 1 FROM json_each(snapshot, '$.context') AS je WHERE json_extract(je.value, '$.status') = 'suspended' AND json_extract(je.value, '$.suspendPayload.__streamState.messageList.memoryInfo.threadId') = ?) OR json_extract(snapshot, '$.context.input.messageListState.memoryInfo.threadId') = ?)`,
+        );
+        args.push(threadId, threadId);
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -3,24 +3,28 @@ import { createBackgroundTask } from '../../../../background-tasks/create';
 import { resolveBackgroundConfig } from '../../../../background-tasks/resolve-config';
 import type { ToolBackgroundConfig } from '../../../../background-tasks/types';
 import type { PubSub } from '../../../../events/pubsub';
+import { resolveFrameworkSuspendedToolIdentity } from '../../../../loop/shared/suspended-tool-run-id';
+import type { ResolvedSuspendedToolIdentity } from '../../../../loop/shared/suspended-tool-run-id';
 import type { Mastra } from '../../../../mastra';
 import type { MastraMemory } from '../../../../memory/memory';
 import type { MemoryConfig } from '../../../../memory/types';
-import { EntityType, SpanType } from '../../../../observability';
-import type { ExportedSpan } from '../../../../observability';
+import { EntityType, SpanType, createObservabilityContext } from '../../../../observability';
+import type { ExportedSpan, ObservabilityContext } from '../../../../observability';
 import type { ProcessorState } from '../../../../processors';
 import { ProcessorRunner } from '../../../../processors/runner';
 import type { ChunkType } from '../../../../stream/types';
 import { ChunkFrom } from '../../../../stream/types';
 import { findProviderToolByName } from '../../../../tools/provider-tool-utils';
+import { ToolStream } from '../../../../tools/stream';
 import { PUBSUB_SYMBOL } from '../../../../workflows/constants';
 import type { SuspendOptions } from '../../../../workflows/step';
 import { createStep } from '../../../../workflows/workflow';
 import { stopGoalActivity } from '../../../goal';
 import type { MessageList } from '../../../message-list';
 import type { SaveQueueManager } from '../../../save-queue';
+import { resolveDeclineReason } from '../../../tool-approval';
 import { DurableStepIds } from '../../constants';
-import { globalRunRegistry } from '../../run-registry';
+import { globalRunRegistry, markRunActive } from '../../run-registry';
 import { emitSuspendedEvent, emitChunkEvent } from '../../stream-adapter';
 import type {
   DurableToolCallInput,
@@ -29,7 +33,12 @@ import type {
   RunRegistryEntry,
 } from '../../types';
 import { applyToolPayloadTransformToChunk } from '../../utils/apply-tool-payload-transform';
-import { rebuildRunToolsFromMastra, resolveTool, toolRequiresApproval } from '../../utils/resolve-runtime';
+import {
+  rebuildRunToolsFromMastra,
+  resolveTool,
+  restoreRequestContext,
+  toolRequiresApproval,
+} from '../../utils/resolve-runtime';
 import { serializeError } from '../../utils/serialize-state';
 import { normalizeModelOutput } from './normalize-model-output';
 
@@ -141,20 +150,21 @@ async function processChunkThroughOutputProcessors(
   agentName: string,
   logger: any,
   messageList?: MessageList,
+  observabilityContext?: ObservabilityContext,
 ): Promise<ChunkType | null> {
   if (!registryEntry?.outputProcessors?.length || !registryEntry.processorStates) {
     return chunk;
   }
 
-  try {
-    const runner = new ProcessorRunner({
-      inputProcessors: [],
-      outputProcessors: registryEntry.outputProcessors,
-      logger,
-      agentName,
-      processorStates: registryEntry.processorStates,
-    });
+  const runner = new ProcessorRunner({
+    inputProcessors: [],
+    outputProcessors: registryEntry.outputProcessors,
+    logger,
+    agentName,
+    processorStates: registryEntry.processorStates,
+  });
 
+  try {
     const {
       part: processed,
       blocked,
@@ -164,7 +174,7 @@ async function processChunkThroughOutputProcessors(
     } = await runner.processPart(
       chunk,
       registryEntry.processorStates as Map<string, ProcessorState>,
-      undefined, // observabilityContext
+      observabilityContext,
       registryEntry.requestContext,
       messageList,
       0,
@@ -198,6 +208,10 @@ async function processChunkThroughOutputProcessors(
     logger?.warn?.(`[DurableAgent] Output processor error for tool chunk: ${error}`);
     // Fall through: emit the original chunk if processor fails
     return chunk;
+  } finally {
+    // The finish chunk that normally ends stream-processor spans never reaches
+    // this pipeline, so end the spans opened for this chunk here.
+    runner.endStreamProcessorSpans(registryEntry.processorStates as Map<string, ProcessorState>);
   }
 }
 
@@ -252,6 +266,12 @@ export function createDurableToolCallStep() {
         resumeDataFromArgs = resumeDataFromInput;
       }
       const resumeData = resumeDataFromArgs ?? workflowResumeData;
+      const approvalDecision =
+        workflowResumeData != null &&
+        typeof workflowResumeData === 'object' &&
+        typeof (workflowResumeData as Record<string, unknown>).approved === 'boolean'
+          ? (workflowResumeData as { approved: boolean; reason?: string })
+          : undefined;
 
       // Get context from init data (the parent workflow input)
       const initData = getInitData<{
@@ -319,6 +339,21 @@ export function createDurableToolCallStep() {
       // back to the Mastra-wide tool registry (exact name, provider-tool
       // name, then by id). Mirrors the non-durable tool-call step.
       const registryEntry = globalRunRegistry.get(runId);
+      const observability = (mastra as Mastra | undefined)?.observability?.getSelectedInstance({ requestContext });
+
+      // Tracing context for per-chunk PROCESSOR_RUN spans: the run's AGENT_RUN span (live
+      // in-process, rebuilt cross-process). Without it they export as orphan trace roots.
+      const processorAgentSpanData = registryEntry?.resumeAgentSpanData ?? initData.agentSpanData;
+      const processorAgentSpan =
+        registryEntry?.resumeAgentSpan ??
+        registryEntry?.agentSpan ??
+        (processorAgentSpanData && observability
+          ? observability.rebuildSpan(processorAgentSpanData as ExportedSpan<SpanType.AGENT_RUN>)
+          : undefined);
+      const processorObservabilityContext = processorAgentSpan
+        ? createObservabilityContext({ currentSpan: processorAgentSpan })
+        : undefined;
+
       let tool = registryEntry?.tools?.[toolName];
       let mastraTools: Record<string, any> | undefined;
       // Tools rebuilt from the Mastra instance when the per-process registry is
@@ -489,13 +524,18 @@ export function createDurableToolCallStep() {
       const registryRequireToolApproval = registryEntry?.requireToolApproval;
       const effectiveRequireToolApproval =
         registryRequireToolApproval !== undefined ? registryRequireToolApproval : agentOptions.requireToolApproval;
+      // Prefer the live in-process request context. On a cross-process worker
+      // (or a resume after restart) the registry is empty, so fall back to the
+      // persisted `requestContextEntries` snapshot — the same source the tool
+      // rebuild uses — so context-aware approval predicates still see the
+      // request scope captured when the run started.
+      const approvalRequestContext =
+        registryEntry?.requestContext ?? restoreRequestContext(initData.requestContextEntries, requestContext);
       const requiresApproval = await toolRequiresApproval(tool, effectiveRequireToolApproval, args, {
         toolName,
-        requestContext: registryEntry?.requestContext
-          ? Object.fromEntries(
-              [...registryEntry.requestContext.entries()].filter(([key]) => key !== '__mastra_requireToolApproval'),
-            )
-          : undefined,
+        requestContext: Object.fromEntries(
+          [...approvalRequestContext.entries()].filter(([key]) => key !== '__mastra_requireToolApproval'),
+        ),
         // Use the same rebuilt-workspace fallback as execution (above), so
         // workspace-aware approval policies see their workspace cross-process.
         workspace,
@@ -580,57 +620,69 @@ export function createDurableToolCallStep() {
         });
       };
 
-      // Remove suspended-tool / pending-approval metadata from the last
-      // assistant message when a tool is being resumed. This mirrors the
-      // regular agent's `removeToolMetadata()`.
-      const removeToolMetadata = async (type: 'suspension' | 'approval') => {
+      const removeToolMetadata = async (
+        target: { toolCallId?: string; toolName: string; runId?: string },
+        type: 'suspension' | 'approval',
+      ) => {
         if (!messageList) return;
+
         const metadataKey = type === 'suspension' ? 'suspendedTools' : 'pendingToolApprovals';
-        const allMessages = messageList.get.all.db();
-        const lastAssistantMessage = [...allMessages].reverse().find(msg => {
-          const content = msg.content;
-          if (!content) return false;
-          const meta =
-            typeof content.metadata === 'object' && content.metadata !== null
-              ? (content.metadata as Record<string, any>)
+        const expectedPartType = type === 'suspension' ? 'data-tool-call-suspended' : 'data-tool-call-approval';
+        const entryMatches = (entry: any, fallbackToolCallId?: string): boolean => {
+          const entryToolCallId = typeof entry?.toolCallId === 'string' ? entry.toolCallId : fallbackToolCallId;
+          const entryToolName = entry?.parentToolName ?? entry?.toolName;
+          const entryRunId = type === 'approval' ? entry?.delegatedRunId : (entry?.delegatedRunId ?? entry?.runId);
+          if (target.toolCallId) return entryToolCallId === target.toolCallId;
+          return entryToolName === target.toolName && !!target.runId && entryRunId === target.runId;
+        };
+
+        const changedMessages = [];
+        for (const message of messageList.get.all.db()) {
+          if (message.role !== 'assistant') continue;
+
+          let messageChanged = false;
+          const metadata =
+            typeof message.content.metadata === 'object' && message.content.metadata !== null
+              ? (message.content.metadata as Record<string, any>)
               : undefined;
-          return (
-            !!meta?.[metadataKey]?.[toolCallId] ||
-            Object.values(meta?.[metadataKey] ?? {}).some(
-              (e: any) => e?.toolCallId === toolCallId || e?.parentToolName === toolName || e?.toolName === toolName,
-            )
-          );
-        });
-        if (!lastAssistantMessage?.content) return;
-        const meta =
-          typeof lastAssistantMessage.content.metadata === 'object' && lastAssistantMessage.content.metadata !== null
-            ? (lastAssistantMessage.content.metadata as Record<string, any>)
-            : undefined;
-        if (!meta?.[metadataKey]) return;
-        // Resolve key: exact toolCallId, then by entry toolCallId, then by toolName
-        const entries = meta[metadataKey] as Record<string, any>;
-        const key = entries[toolCallId]
-          ? toolCallId
-          : (Object.keys(entries).find(k => entries[k]?.toolCallId === toolCallId) ??
-            Object.keys(entries).find(
-              k => entries[k]?.parentToolName === toolName || entries[k]?.toolName === toolName,
-            ) ??
-            (entries[toolName] ? toolName : undefined));
-        if (key) {
-          delete entries[key];
-          if (Object.keys(entries).length === 0) {
-            delete meta[metadataKey];
+          const entries = metadata?.[metadataKey] as Record<string, any> | undefined;
+          if (entries) {
+            for (const [key, entry] of Object.entries(entries)) {
+              if (entryMatches(entry, key)) {
+                delete entries[key];
+                messageChanged = true;
+              }
+            }
+            if (Object.keys(entries).length === 0) delete metadata![metadataKey];
           }
+
+          message.content.parts = message.content.parts?.map(part => {
+            if (part.type !== expectedPartType || !entryMatches(part.data)) return part;
+            if ((part.data as { resumed?: boolean }).resumed) return part;
+            messageChanged = true;
+            return { ...part, data: { ...(part.data as any), resumed: true } };
+          });
+
+          if (messageChanged) changedMessages.push(message);
         }
-        // Flush to persist the metadata removal
+
+        if (changedMessages.length === 0) return;
+        messageList.add(changedMessages, 'response');
         await doFlush();
       };
 
-      if (requiresApproval && !resumeData) {
+      const suspendedForApproval =
+        suspendData != null &&
+        typeof suspendData === 'object' &&
+        (suspendData as { type?: unknown }).type === 'approval';
+      const approvalGated = suspendedForApproval || (requiresApproval && suspendData === undefined);
+
+      if (approvalGated && !approvalDecision) {
         const resumeSchema = JSON.stringify({
           type: 'object',
           properties: {
             approved: { type: 'boolean' },
+            reason: { type: 'string' },
           },
           required: ['approved'],
         });
@@ -682,21 +734,14 @@ export function createDurableToolCallStep() {
         );
       }
 
-      // Check if resuming from approval — only when the tool actually requires
-      // approval.  Without the `requiresApproval` guard, generic resume data that
-      // happens to contain an `approved` field (e.g. from context.agent.suspend())
-      // would be misinterpreted as an approval response.
-      if (
-        requiresApproval &&
-        resumeData &&
-        typeof resumeData === 'object' &&
-        resumeData !== null &&
-        'approved' in resumeData
-      ) {
+      // Check if resuming from approval. Without the `approvalGated` guard,
+      // generic resume data that happens to contain an `approved` field (e.g. from
+      // context.agent.suspend()) would be misinterpreted as an approval response.
+      if (approvalGated && approvalDecision) {
         // Remove approval metadata since we're resuming (either approved or declined)
-        await removeToolMetadata('approval');
+        await removeToolMetadata({ toolCallId, toolName }, 'approval');
 
-        if (!(resumeData as { approved: boolean }).approved) {
+        if (!approvalDecision.approved) {
           // Return the approval decision (not a `result` string) so it persists as
           // `state: 'output-denied'` with `approval`. The denial reason carries the
           // existing string so downstream consumers/UI keep the same message.
@@ -705,7 +750,7 @@ export function createDurableToolCallStep() {
           const approval = {
             id: toolCallId,
             approved: false as const,
-            reason: 'Tool call was not approved by the user',
+            reason: resolveDeclineReason(approvalDecision),
           };
           if (pubsub) {
             try {
@@ -730,6 +775,7 @@ export function createDurableToolCallStep() {
                 initData.agentId,
                 logger,
                 messageList,
+                processorObservabilityContext,
               );
               if (processed) {
                 await emitChunkEvent(pubsub, runId, processed);
@@ -748,28 +794,13 @@ export function createDurableToolCallStep() {
       // When an approval-gated tool is approved on resume, tag the resolved output with the
       // approval decision so it round-trips through persistence as `approval: { approved: true }`.
       const approvalGrant =
-        requiresApproval &&
-        resumeData &&
-        typeof resumeData === 'object' &&
-        resumeData !== null &&
-        (resumeData as { approved?: boolean }).approved === true
+        approvalGated && approvalDecision?.approved === true
           ? ({ approval: { id: toolCallId, approved: true as const } } as const)
           : undefined;
 
-      // Check if resuming from in-execution suspension
-      // Pass resumeData through to the tool so it can continue from where it left off.
-      // For approval-gated tools, only an object with an `approved` field is an
-      // approval decision; any other defined resume data is forwarded from an
-      // in-execution suspension.
-      const isResumingFromSuspension =
-        resumeData !== undefined &&
-        !(requiresApproval && typeof resumeData === 'object' && resumeData !== null && 'approved' in resumeData);
-
-      // Remove suspension metadata when resuming from an in-execution (non-approval-decision) suspension.
-      // `isResumingFromSuspension` already excludes the approval-decision case above.
-      if (isResumingFromSuspension) {
-        await removeToolMetadata('suspension');
-      }
+      // Check if resuming from in-execution suspension. Once the approval gate has
+      // resolved, all later resume data belongs to the tool's own suspension schema.
+      const isResumingFromSuspension = resumeData !== undefined && !approvalGated;
 
       // 3. Check for background task execution
       const bgManager = registryEntry?.backgroundTaskManager;
@@ -784,26 +815,54 @@ export function createDurableToolCallStep() {
         delete (cleanedArgs as any)._background;
       }
 
-      // When resuming a delegated sub-agent/workflow tool, recover the inner
-      // suspended run id from this tool call's workflow suspend payload. The
-      // payload is partitioned by resumeLabel, so parallel calls to the same
-      // delegate cannot select each other's run. Auto-resume calls already pass
-      // suspendedToolRunId in their arguments and keep that value unchanged.
+      // Parity with the regular loop (tool-call-step.ts): stamp the caller's
+      // thread/resource identity onto agent-tool args so the sub-agent wrapper
+      // derives `${resourceId}-${agentName}` instead of falling back to the
+      // parent agent's id (issue #23903). Always overwrite — LLM-hallucinated
+      // ids must not leak into sub-agents. In the durable world the scope
+      // context doesn't exist; serialized workflow state is its equivalent.
+      if (toolName?.startsWith('agent-') && 'prompt' in cleanedArgs) {
+        cleanedArgs.threadId = state?.threadId;
+        cleanedArgs.resourceId = state?.resourceId;
+      }
+
+      const modelSuppliedSuspendedToolRunId = cleanedArgs.suspendedToolRunId;
+      const modelSuppliedSuspendedToolCallId = cleanedArgs.suspendedToolCallId;
+      delete cleanedArgs.suspendedToolRunId;
+      delete cleanedArgs.suspendedToolCallId;
+
+      // Delegated identity is trusted only after it is tied to framework-persisted
+      // suspension state. The suspend payload remains the primary per-tool-call source.
       const isResumableTool = toolName?.startsWith('agent-') || toolName?.startsWith('workflow-');
-      const suspendedToolRunId = (suspendData as { suspendedToolRunId?: unknown } | undefined)?.suspendedToolRunId;
+      const needsRunIdLookup = isResumableTool && (resumeData !== undefined || !!approvalGrant);
+      // Nullish model data follows the framework resume path; false, 0, and empty strings remain valid model payloads.
+      const hasModelResumeData = resumeDataFromArgs != null;
+      const resolvedSuspensionIdentity: ResolvedSuspendedToolIdentity | undefined = needsRunIdLookup
+        ? resolveFrameworkSuspendedToolIdentity({
+            toolCallId,
+            toolName,
+            resumeSource: hasModelResumeData ? 'model' : 'framework',
+            modelSuppliedSuspendedToolCallId: hasModelResumeData ? modelSuppliedSuspendedToolCallId : undefined,
+            modelSuppliedSuspendedToolRunId: hasModelResumeData ? modelSuppliedSuspendedToolRunId : undefined,
+            suspendData,
+            messages: messageList?.get.all.db() ?? [],
+          })
+        : undefined;
+      const suspendedToolRunId = resolvedSuspensionIdentity?.runId;
       // When the delegation tool is itself approval-gated, an `{ approved: true }`
       // resume is ambiguous: it can answer this step's pre-execution gate (execute
-      // fresh) or a delegated approval raised mid-execution by the sub-agent. The
-      // suspend payload disambiguates — only the delegated approval persists an
-      // inner suspended run id, so its decision must resume that inner run.
-      const isDelegatedApprovalResume = !!approvalGrant && isResumableTool && typeof suspendedToolRunId === 'string';
-      if (
-        (isResumingFromSuspension || isDelegatedApprovalResume) &&
-        isResumableTool &&
-        !cleanedArgs.suspendedToolRunId &&
-        typeof suspendedToolRunId === 'string'
-      ) {
+      // fresh) or a delegated approval raised mid-execution by the sub-agent. A
+      // framework-resolved inner run id disambiguates the delegated approval.
+      const isDelegatedApprovalResume = !!approvalGrant && !!suspendedToolRunId;
+      if ((isResumingFromSuspension || isDelegatedApprovalResume) && suspendedToolRunId) {
         cleanedArgs.suspendedToolRunId = suspendedToolRunId;
+      }
+
+      if (isResumingFromSuspension) {
+        const cleanupTarget = isResumableTool ? resolvedSuspensionIdentity : { toolCallId, toolName };
+        if (cleanupTarget) {
+          await removeToolMetadata(cleanupTarget, resolvedSuspensionIdentity?.type ?? 'suspension');
+        }
       }
 
       // Fire onInputAvailable lifecycle hook before execution (matches non-durable path).
@@ -830,7 +889,6 @@ export function createDurableToolCallStep() {
 
       // Rebuild the forwarded model_step span and pass it as the tool's tracing context so
       // the TOOL_CALL span nests under the LLM call (matches the non-durable path).
-      const observability = (mastra as Mastra | undefined)?.observability?.getSelectedInstance({ requestContext });
       const stepSpan =
         typedInput.stepSpanData && observability
           ? observability.rebuildSpan(typedInput.stepSpanData as ExportedSpan<SpanType.MODEL_STEP>)
@@ -847,11 +905,20 @@ export function createDurableToolCallStep() {
       // cancellation (mirrors the non-durable tool-call-step).
       const toolAbortSignal = registryEntry?.abortSignal;
 
+      // Provide outputWriter so context.writer.write() / context.writer.custom()
+      // emit chunks through pubsub (matching the regular agent's tool streaming).
+      const outputWriter = pubsub
+        ? async (chunk: any) => {
+            await emitChunkEvent(pubsub, runId, chunk as ChunkType);
+          }
+        : undefined;
+
       const toolOptions = {
         toolCallId,
         messages: [],
         workspace,
         requestContext,
+        mcp: registryEntry?.mcp,
         tracingContext: toolTracingContext,
         // Use the actor supplied for this workflow segment. A resumed segment
         // must never recover the initial actor from serialized agent options.
@@ -859,14 +926,22 @@ export function createDurableToolCallStep() {
         // Delegated approval decisions must also flow to the wrapper tool: it only
         // resumes the inner suspended run when resumeData is present.
         resumeData: isResumingFromSuspension || isDelegatedApprovalResume ? resumeData : undefined,
+        suspendedToolRunId,
+        // The payload this tool call suspended with (see `toolCallSuspended` below), so a
+        // resumed tool can continue from its own state — mirrors the non-durable step.
+        ...(isResumingFromSuspension &&
+        suspendData != null &&
+        typeof suspendData === 'object' &&
+        'toolCallSuspended' in suspendData
+          ? { suspendPayload: (suspendData as { toolCallSuspended?: unknown }).toolCallSuspended }
+          : {}),
         ...(toolAbortSignal ? { abortSignal: toolAbortSignal } : {}),
-        // Provide outputWriter so context.writer.write() / context.writer.custom()
-        // emit chunks through pubsub (matching the regular agent's tool streaming).
-        outputWriter: pubsub
-          ? async (chunk: any) => {
-              await emitChunkEvent(pubsub, runId, chunk as ChunkType);
-            }
-          : undefined,
+        outputWriter,
+        // Raw `Tool` instances resolved from the Mastra registry (the cross-process
+        // fallback path) are not wrapped by CoreToolBuilder, so they only get a
+        // `writer` if we construct it here — mirrors the non-durable tool-call-step.
+        // Registry tools go through CoreToolBuilder, which builds its own ToolStream.
+        writer: new ToolStream({ prefix: 'tool', callId: toolCallId, name: toolName, runId }, outputWriter),
 
         // In-execution suspend callback — allows tools to suspend mid-execution
         suspend: async (suspendPayload: any, suspendOptions?: SuspendOptions) => {
@@ -896,6 +971,7 @@ export function createDurableToolCallStep() {
               type: 'object',
               properties: {
                 approved: { type: 'boolean' },
+                reason: { type: 'string' },
               },
               required: ['approved'],
             });
@@ -1036,6 +1112,7 @@ export function createDurableToolCallStep() {
                     return tool.execute!(taskArgs, {
                       ...toolOptions,
                       ...(taskContext?.resumeData !== undefined ? { resumeData: taskContext.resumeData } : {}),
+                      suspendedToolRunId: taskContext?.suspendedToolRunId,
                       suspend: async (data?: unknown, options?: SuspendOptions) => {
                         await toolOptions.suspend?.(data, options);
                         return taskContext?.suspend?.(data, options);
@@ -1283,7 +1360,13 @@ export function createDurableToolCallStep() {
       }
 
       try {
-        const result = await tool.execute(cleanedArgs, toolOptions);
+        const releaseRunActivity = markRunActive(runId);
+        let result: unknown;
+        try {
+          result = await tool.execute(cleanedArgs, toolOptions);
+        } finally {
+          releaseRunActivity();
+        }
 
         // Fire onOutput lifecycle hook after successful execution (matches non-durable path).
         if (tool && 'onOutput' in tool && typeof (tool as any).onOutput === 'function') {
@@ -1366,6 +1449,7 @@ export function createDurableToolCallStep() {
               initData.agentId,
               logger,
               messageList,
+              processorObservabilityContext,
             );
             if (processed) {
               await emitChunkEvent(pubsub, runId, processed);
@@ -1417,6 +1501,7 @@ export function createDurableToolCallStep() {
               initData.agentId,
               logger,
               messageList,
+              processorObservabilityContext,
             );
             if (processed) {
               await emitChunkEvent(pubsub, runId, processed);

@@ -1,13 +1,109 @@
+import { createHash } from 'crypto';
 import { it, describe, expect, beforeAll, afterAll, inject } from 'vitest';
-import { join } from 'path';
+import { dirname, join, relative } from 'path';
 import { setupMonorepo } from './prepare';
-import { mkdtemp, mkdir, rm, readFile, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, readlink, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { pathToFileURL } from 'url';
 import getPort from 'get-port';
 import { execa, execaNode } from 'execa';
 
 const timeout = 5 * 60 * 1000;
+
+function getPnpmImporterDependencies(lockfile: string, importer: string): Map<string, string> {
+  const lines = lockfile.split(/\r?\n/);
+  const importerStart = lines.findIndex(line => line === `  ${importer}:`);
+  if (importerStart === -1) {
+    throw new Error(`Missing pnpm lockfile importer: ${importer}`);
+  }
+
+  const dependencies = new Map<string, string>();
+  let dependencyName: string | undefined;
+  for (let index = importerStart + 1; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (/^  \S/.test(line)) break;
+
+    const dependencyMatch = /^      ([^\s].*):$/.exec(line);
+    if (dependencyMatch?.[1]) {
+      dependencyName = dependencyMatch[1].replace(/^['"]|['"]$/g, '');
+      continue;
+    }
+
+    const versionMatch = /^        version: (.+)$/.exec(line);
+    if (dependencyName && versionMatch?.[1]) {
+      dependencies.set(dependencyName, versionMatch[1].replace(/^['"]|['"]$/g, ''));
+      dependencyName = undefined;
+    }
+  }
+
+  return dependencies;
+}
+
+/**
+ * Killing the `npm run dev` wrapper orphans the `mastra dev` grandchild, which
+ * keeps running and holds `.mastra/dev.lock`. `mastra build` refuses to build
+ * while that lock names a live pid, so later build suites in this file fail
+ * with "A `mastra dev` server is running in this directory" unless the real
+ * dev server is killed and the lock removed.
+ */
+async function killOrphanedDevServer(projectDir: string) {
+  const lockPath = join(projectDir, '.mastra', 'dev.lock');
+  try {
+    const { pid } = JSON.parse(await readFile(lockPath, 'utf-8'));
+    if (typeof pid !== 'number' || pid <= 0) return;
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return;
+    }
+    await rm(lockPath, { force: true });
+  } catch {}
+}
+
+async function findInDir(root: string, targetName: string): Promise<boolean> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.name === targetName) {
+      return true;
+    }
+    if (entry.isDirectory()) {
+      if (await findInDir(join(root, entry.name), targetName)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function getDirectoryDigests(root: string): Promise<Record<string, string>> {
+  const digests: Record<string, string> = {};
+
+  async function visit(dir: string) {
+    const entries = await readdir(dir, { withFileTypes: true });
+    entries.sort((first, second) => first.name.localeCompare(second.name));
+
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      const relativePath = relative(root, path).replaceAll('\\', '/');
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isSymbolicLink()) {
+        digests[relativePath] = `link:${await readlink(path)}`;
+      } else if (entry.isFile()) {
+        digests[relativePath] = createHash('sha256')
+          .update(await readFile(path))
+          .digest('hex');
+      }
+    }
+  }
+
+  await visit(root);
+  return digests;
+}
 
 const activeProcesses: Array<{ controller: AbortController; proc: ReturnType<typeof execa | typeof execaNode> }> = [];
 
@@ -36,6 +132,16 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
   let fixturePath: string;
 
   let buildQueue: Promise<unknown> = Promise.resolve();
+
+  function reserveBuildQueue() {
+    const waitForTurn = buildQueue;
+    let release!: () => void;
+    const reservation = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    buildQueue = waitForTurn.then(() => reservation);
+    return { waitForTurn, release };
+  }
 
   async function removeOutputDir(path: string) {
     const outputDir = join(path, 'apps', 'custom', '.mastra', 'output');
@@ -99,6 +205,14 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
       expect(res.status).toBe(200);
       expect(body).toEqual({ message: 'Hello, world!', a: 'b' });
     });
+
+    it('should resolve createRoute api routes', async () => {
+      const res = await fetch(`http://localhost:${port}/create-route`);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ message: 'Hello from createRoute!' });
+    });
+
     it('should resolve api ALL routes', async () => {
       let res = await fetch(`http://localhost:${port}/all`);
       let body = await res.json();
@@ -113,11 +227,41 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
       expect(body).toEqual({ message: 'Hello, POST!' });
     });
 
-    it('should resolve transitive workspace dependencies', async () => {
+    it('should resolve scoped transitive workspace dependencies', async () => {
       const res = await fetch(`http://localhost:${port}/transitive-workspace`);
       const body = await res.json();
       expect(res.status).toBe(200);
-      expect(body).toEqual({ value: 'a -> b -> c', app: 'App value is BEFORE.' });
+      expect(body).toEqual({ value: 'a -> b -> c', root: 'root', app: 'App value is BEFORE.' });
+    });
+
+    it('should preserve dynamic subpath imports when the package has a nested module package.json', async () => {
+      const res = await fetch(`http://localhost:${port}/protobuf-subpath`);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ typeName: 'google.protobuf.Timestamp' });
+    });
+
+    it('reports hasBrowser for an agent with a workspace-level CLI browser', async () => {
+      const res = await fetch(`http://localhost:${port}/api/agents/browser-agent`);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      // CLI providers expose no SDK tools; the capability must come from the workspace browser.
+      expect(body.browserTools).toEqual([]);
+      expect(body.hasBrowser).toBe(true);
+    });
+
+    it('reports hasBrowser false for an agent without a browser', async () => {
+      const res = await fetch(`http://localhost:${port}/api/agents/inner-agent`);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body.hasBrowser).toBe(false);
+    });
+
+    it('serves the browser session probe with screencast available', async () => {
+      const res = await fetch(`http://localhost:${port}/api/agents/browser-agent/browser/session`);
+      const body = await res.json();
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ hasSession: false, screencastAvailable: true });
     });
 
     it('should return tools from the api', async () => {
@@ -128,65 +272,153 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
         ['calculatorTool', 'lodashTool', 'hello-world', 'generate-password', 'compare-password'].sort(),
       );
     });
+
+    it('should list a registered MCP server and execute its tool', async () => {
+      const listRes = await fetch(`http://localhost:${port}/api/mcp/v0/servers`);
+      const list = await listRes.json();
+      expect(listRes.status).toBe(200);
+      expect(list.servers.map((server: { id: string }) => server.id)).toContain('calculator');
+
+      const toolsRes = await fetch(`http://localhost:${port}/api/mcp/calculator/tools`);
+      const tools = await toolsRes.json();
+      expect(toolsRes.status).toBe(200);
+      expect(tools.tools.map((tool: { id: string }) => tool.id)).toEqual(['calculatorTool']);
+
+      const execRes = await fetch(`http://localhost:${port}/api/mcp/calculator/tools/calculatorTool/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { a: 2, b: 3 } }),
+      });
+      const executed = await execRes.json();
+      expect(execRes.status).toBe(200);
+      expect(executed).toEqual({ result: 5 });
+    });
+
+    it('should answer invalid MCP tool input with 400', async () => {
+      const res = await fetch(`http://localhost:${port}/api/mcp/calculator/tools/calculatorTool/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { a: 'two', b: 3 } }),
+      });
+      const body = await res.json();
+      expect({ status: res.status, body }).toEqual({
+        status: 400,
+        body: { error: expect.stringContaining('calculatorTool') },
+      });
+    });
   }
 
   describe.sequential('dev', async () => {
+    const buildReservation = reserveBuildQueue();
     let port = await getPort();
     let proc: ReturnType<typeof execa> | undefined;
     const controller = new AbortController();
     const cancelSignal = controller.signal;
 
     beforeAll(async () => {
-      const inputFile = join(fixturePath, 'apps', 'custom');
-      proc = execa('npm', ['run', 'dev'], {
-        cwd: inputFile,
-        cancelSignal,
-        gracefulCancel: true,
-        env: {
-          OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-          MASTRA_PORT: port.toString(),
-        },
-      });
+      await buildReservation.waitForTurn;
+      try {
+        const inputFile = join(fixturePath, 'apps', 'custom');
+        const mastraIndexPath = join(inputFile, 'src', 'mastra', 'index.ts');
+        const mastraIndex = (await readFile(mastraIndexPath, 'utf8'))
+          .replace(
+            "import { testRoute } from '@/api/route/test';",
+            "import { testRoute } from '@/api/route/test';\nimport { environmentRoute } from '@/api/route/environment';",
+          )
+          .replace(/apiRoutes: \[\s*testRoute,/, 'apiRoutes: [testRoute, environmentRoute,');
+        await Promise.all([
+          writeFile(mastraIndexPath, mastraIndex),
+          writeFile(join(inputFile, '.env'), 'BASE_ONLY=base\nSHARED=base\n'),
+          writeFile(join(inputFile, '.env.local'), 'LOCAL_ONLY=local\nSHARED=local\n'),
+          writeFile(join(inputFile, '.env.development'), 'ENVIRONMENT_ONLY=development\n'),
+          writeFile(join(inputFile, '.env.production'), 'ENVIRONMENT_ONLY=production\n'),
+          writeFile(
+            join(inputFile, 'src', 'mastra', 'api', 'route', 'environment.ts'),
+            `import { registerApiRoute } from '@mastra/core/server';
 
-      activeProcesses.push({ controller, proc });
-
-      await new Promise<void>((resolve, reject) => {
-        proc!.stderr?.on('data', data => {
-          const errMsg = data?.toString();
-          if (errMsg && errMsg.includes('punycode')) {
-            // Ignore punycode warning
-            return;
-          }
-          if (errMsg && errMsg.includes('falling back to an in-memory store')) {
-            // Ignore in-memory storage fallback warning (no storage configured in fixture)
-            return;
-          }
-          reject(new Error('failed to start dev: ' + errMsg));
+export const environmentRoute = registerApiRoute('/environment', {
+  method: 'GET',
+  handler: async c => c.json({
+    base: process.env.BASE_ONLY,
+    local: process.env.LOCAL_ONLY,
+    environment: process.env.ENVIRONMENT_ONLY,
+    shared: process.env.SHARED,
+  }),
+});
+`,
+          ),
+        ]);
+        proc = execa('mastra', ['dev'], {
+          cwd: inputFile,
+          preferLocal: true,
+          cancelSignal,
+          gracefulCancel: true,
+          env: {
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            MASTRA_PORT: port.toString(),
+            SHARED: 'shell',
+          },
         });
-        proc!.stdout?.on('data', data => {
-          process.stdout.write(data?.toString());
-          if (data?.toString()?.includes(`http://localhost:${port}`)) {
-            resolve();
-          }
-        });
-      });
-    }, timeout);
 
-    afterAll(async () => {
-      if (proc) {
-        try {
-          proc.kill('SIGKILL');
-          await Promise.race([proc.catch(() => {}), new Promise(resolve => setTimeout(resolve, 5_000))]);
-        } catch (err) {
-          // @ts-expect-error - isCanceled is not typed
-          if (!err.killed) {
-            console.log('failed to kill build proc', err);
-          }
-        }
+        activeProcesses.push({ controller, proc });
+
+        await new Promise<void>((resolve, reject) => {
+          proc!.stderr?.on('data', data => {
+            const errMsg = data?.toString();
+            if (errMsg && errMsg.includes('punycode')) {
+              // Ignore punycode warning
+              return;
+            }
+            if (errMsg && errMsg.includes('falling back to an in-memory store')) {
+              // Ignore in-memory storage fallback warning (no storage configured in fixture)
+              return;
+            }
+            reject(new Error('failed to start dev: ' + errMsg));
+          });
+          proc!.stdout?.on('data', data => {
+            process.stdout.write(data?.toString());
+            if (data?.toString()?.includes(`http://localhost:${port}`)) {
+              resolve();
+            }
+          });
+        });
+      } catch (error) {
+        buildReservation.release();
+        throw error;
       }
     }, timeout);
 
+    afterAll(async () => {
+      try {
+        if (proc) {
+          try {
+            controller.abort();
+            await Promise.race([proc.catch(() => {}), new Promise(resolve => setTimeout(resolve, 5_000))]);
+          } catch (err) {
+            // @ts-expect-error - isCanceled is not typed
+            if (!err.isCanceled) {
+              console.log('failed to kill dev proc', err);
+            }
+          }
+        }
+      } finally {
+        buildReservation.release();
+      }
+      await killOrphanedDevServer(join(fixturePath, 'apps', 'custom'));
+    }, timeout);
+
     runApiTests(port);
+
+    it('layers development dotenv files without overriding the shell environment', async () => {
+      const res = await fetch(`http://localhost:${port}/environment`);
+
+      await expect(res.json()).resolves.toEqual({
+        base: 'base',
+        local: 'local',
+        environment: 'development',
+        shared: 'shell',
+      });
+    });
 
     it(
       'hot-reloads workspace package changes without a full process restart',
@@ -206,14 +438,57 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
         const originalPackageSource = await readFile(packageSource, 'utf-8');
         const originalAppRoute = await readFile(appRoute, 'utf-8');
 
-        const waitForReload = async (predicate: (body: { value: string; app: string }) => boolean) => {
+        const readServerInstance = async () => {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10_000);
+          try {
+            const instanceIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+            while (!controller.signal.aborted) {
+              const page = await fetch(`http://localhost:${port}/`, { signal: controller.signal });
+              expect(page.status).toBe(200);
+              const html = await page.text();
+              const htmlId = html.match(/window\.MASTRA_DEV_SERVER_INSTANCE_ID = "([^"]+)";/)?.[1];
+              expect(htmlId).toMatch(instanceIdPattern);
+              const response = await fetch(`http://localhost:${port}/refresh-events`, { signal: controller.signal });
+              expect(response.status).toBe(200);
+              if (!response.body) throw new Error('Missing refresh stream');
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+              let event = '';
+              try {
+                while (!event.includes('\n\n')) {
+                  const chunk = await reader.read();
+                  if (chunk.done) throw new Error('Refresh stream ended before the handshake');
+                  event += decoder.decode(chunk.value, { stream: true });
+                }
+              } finally {
+                await reader.cancel();
+              }
+              expect(event).toContain('data: connected');
+              const id = event.match(/^id: (.+)$/m)?.[1];
+              expect(id).toMatch(instanceIdPattern);
+              if (htmlId === id) {
+                expect(html).toContain(`window.MASTRA_DEV_SERVER_INSTANCE_ID = "${id}";`);
+                return id;
+              }
+              // A restart between requests is valid; retry both snapshots, not just the stream.
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            throw new Error('Timed out waiting for matching Studio HTML and refresh-stream generations');
+          } finally {
+            clearTimeout(timeout);
+            controller.abort();
+          }
+        };
+
+        const waitForReload = async (predicate: (body: { value: string; root: string; app: string }) => boolean) => {
           const started = Date.now();
-          let lastBody: { value: string; app: string } | undefined;
+          let lastBody: { value: string; root: string; app: string } | undefined;
           while (Date.now() - started < 60_000) {
             try {
               const res = await fetch(`http://localhost:${port}/transitive-workspace`);
               if (res.ok) {
-                lastBody = (await res.json()) as { value: string; app: string };
+                lastBody = (await res.json()) as { value: string; root: string; app: string };
                 if (predicate(lastBody)) {
                   return lastBody;
                 }
@@ -231,21 +506,28 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
           const baseline = await waitForReload(
             body => body.value === 'a -> b -> c' && body.app === 'App value is BEFORE.',
           );
-          expect(baseline).toEqual({ value: 'a -> b -> c', app: 'App value is BEFORE.' });
+          expect(baseline).toEqual({ value: 'a -> b -> c', root: 'root', app: 'App value is BEFORE.' });
+          const initialInstance = await readServerInstance();
+          expect(await readServerInstance()).toBe(initialInstance);
 
           // 2. Edit workspace package only
           await writeFile(packageSource, `export const valueC = 'c-AFTER';\n`);
           const afterPackage = await waitForReload(
             body => body.value === 'a -> b -> c-AFTER' && body.app === 'App value is BEFORE.',
           );
-          expect(afterPackage).toEqual({ value: 'a -> b -> c-AFTER', app: 'App value is BEFORE.' });
+          expect(afterPackage).toEqual({ value: 'a -> b -> c-AFTER', root: 'root', app: 'App value is BEFORE.' });
+          // A browser reconnecting after this broadcast must still detect the restart.
+          await fetch(`http://localhost:${port}/__refresh`, { method: 'POST' });
+          const packageInstance = await readServerInstance();
+          expect(packageInstance).not.toBe(initialInstance);
+          expect(await readServerInstance()).toBe(packageInstance);
 
           // 3. Edit app only — package AFTER must still be present (no stale optimizer cache)
           await writeFile(appRoute, originalAppRoute.replace('App value is BEFORE.', 'App value is AFTER.'));
           const afterApp = await waitForReload(
             body => body.value === 'a -> b -> c-AFTER' && body.app === 'App value is AFTER.',
           );
-          expect(afterApp).toEqual({ value: 'a -> b -> c-AFTER', app: 'App value is AFTER.' });
+          expect(afterApp).toEqual({ value: 'a -> b -> c-AFTER', root: 'root', app: 'App value is AFTER.' });
         } finally {
           // Restore fixture so subsequent build/start suites see the original sources.
           await writeFile(packageSource, originalPackageSource);
@@ -261,9 +543,39 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
     let proc: ReturnType<typeof execa> | undefined;
     const controller = new AbortController();
     const cancelSignal = controller.signal;
+    const sourcePinnedUnicornMagicVersion = '0.2.0';
 
     beforeAll(async () => {
-      await runBuild(fixturePath);
+      const packageJsonPaths = [join(fixturePath, 'package.json'), join(fixturePath, 'apps', 'custom', 'package.json')];
+      const originalPackageJsons = await Promise.all(packageJsonPaths.map(path => readFile(path, 'utf-8')));
+      const sourceLockfilePath = join(fixturePath, 'pnpm-lock.yaml');
+      const sourceLockfile = await readFile(sourceLockfilePath, 'utf-8');
+
+      try {
+        for (const [index, packageJsonPath] of packageJsonPaths.entries()) {
+          const packageJson = JSON.parse(originalPackageJsons[index]!);
+          packageJson.dependencies['unicorn-magic'] = '>=0.2.0';
+          await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
+        }
+
+        const updatedSourceLockfile = sourceLockfile
+          .replace(
+            `      unicorn-magic:\n        specifier: 0.2.0\n        version: 0.2.0`,
+            `      unicorn-magic:\n        specifier: '>=0.2.0'\n        version: ${sourcePinnedUnicornMagicVersion}`,
+          )
+          .replace(
+            `      unicorn-magic:\n        specifier: 0.4.0\n        version: 0.4.0`,
+            `      unicorn-magic:\n        specifier: '>=0.2.0'\n        version: ${sourcePinnedUnicornMagicVersion}`,
+          );
+        if (updatedSourceLockfile === sourceLockfile) {
+          throw new Error('Failed to pin the source unicorn-magic resolution for lockfile reuse coverage');
+        }
+        await writeFile(sourceLockfilePath, updatedSourceLockfile);
+        await runBuild(fixturePath);
+      } finally {
+        await Promise.all(packageJsonPaths.map((path, index) => writeFile(path, originalPackageJsons[index]!)));
+        await writeFile(sourceLockfilePath, sourceLockfile);
+      }
 
       const inputFile = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
       proc = execaNode('index.mjs', {
@@ -318,6 +630,141 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
 
       expect(hasWorkspaceMappedPath).toBeFalsy();
     });
+
+    it('should keep deprecated externals out of optimized dependency bundles', async () => {
+      const outputDir = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+      const outputFiles = await readdir(outputDir);
+      const output = (
+        await Promise.all(
+          outputFiles.filter(file => file.endsWith('.mjs')).map(file => readFile(join(outputDir, file), 'utf-8')),
+        )
+      ).join('\n');
+      const packageJson = JSON.parse(await readFile(join(outputDir, 'package.json'), 'utf-8'));
+
+      expect(outputFiles).not.toContain('nodemailer.mjs');
+      expect(output).not.toContain('nodemailer/lib');
+      expect(packageJson.dependencies?.nodemailer).toBe('^9.0.1');
+    });
+
+    // This stays in the monorepo E2E suite because it builds the generated fixture and validates its output manifest.
+    it('should keep global and user-configured externals in the output manifest', async () => {
+      const packageJsonPath = join(fixturePath, 'apps', 'custom', '.mastra', 'output', 'package.json');
+      const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+
+      expect(packageJson.dependencies).toEqual(
+        expect.objectContaining({
+          bcrypt: expect.any(String),
+          typescript: expect.any(String),
+        }),
+      );
+    });
+
+    it('should exclude dependencies imported only from dead NODE_ENV branches', async () => {
+      const packageJsonPath = join(fixturePath, 'apps', 'custom', '.mastra', 'output', 'package.json');
+      const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
+
+      expect(packageJson.dependencies?.['date-fns']).toBeUndefined();
+    });
+
+    it('should preserve workspace externals as runtime dependencies instead of bundling them', async () => {
+      const outputDir = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+      const outputFiles = await readdir(outputDir, { recursive: true });
+      const output = (
+        await Promise.all(
+          outputFiles.filter(file => file.endsWith('.mjs')).map(file => readFile(join(outputDir, file), 'utf-8')),
+        )
+      ).join('\n');
+      const packageJson = JSON.parse(await readFile(join(outputDir, 'package.json'), 'utf-8'));
+
+      expect(packageJson.dependencies?.['@inner/subpath-only']).toBeTruthy();
+      expect(output).toMatch(/from ["']@inner\/subpath-only["']/);
+      expect(output).toMatch(/from ["']@inner\/subpath-only\/value["']/);
+    });
+
+    it('should update the source pnpm lockfile while installing output dependencies', async () => {
+      const outputDir = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+      const outputFiles = await readdir(outputDir);
+      expect(outputFiles).toContain('pnpm-lock.yaml');
+      expect(outputFiles).not.toContain('package-lock.json');
+
+      const packageJson = JSON.parse(await readFile(join(outputDir, 'package.json'), 'utf-8'));
+      const sourceLockfile = await readFile(join(fixturePath, 'pnpm-lock.yaml'), 'utf-8');
+      const outputLockfile = await readFile(join(outputDir, 'pnpm-lock.yaml'), 'utf-8');
+      const sourceDependencies = getPnpmImporterDependencies(sourceLockfile, '.');
+      const outputDependencies = getPnpmImporterDependencies(outputLockfile, '.');
+
+      expect(packageJson.dependencies['unicorn-magic']).toBe('>=0.2.0');
+      expect(sourceDependencies.get('unicorn-magic')).toBe(sourcePinnedUnicornMagicVersion);
+      expect(outputDependencies.get('unicorn-magic')).toBe(sourcePinnedUnicornMagicVersion);
+      expect([...outputDependencies.keys()]).toEqual(expect.arrayContaining(Object.keys(packageJson.dependencies)));
+    });
+
+    it('should emit a worker runtime entry with a readiness endpoint', async () => {
+      const workerEntryPath = join(fixturePath, 'apps', 'custom', '.mastra', 'output', 'worker.mjs');
+      const workerEntry = await readFile(workerEntryPath, 'utf-8');
+
+      expect(workerEntry).toContain('/health');
+      expect(workerEntry).toContain('startWorkers');
+    });
+
+    it(
+      'should emit a versioned worker manifest when shared storage and pubsub are configured',
+      async () => {
+        const sourcePath = join(fixturePath, 'apps', 'custom', 'src', 'mastra', 'index.ts');
+        const originalSource = await readFile(sourcePath, 'utf-8');
+        const enabledSource = originalSource
+          .replace(
+            "import { Mastra } from '@mastra/core/mastra';",
+            "import { Mastra } from '@mastra/core/mastra';\nimport { MastraWorker } from '@mastra/core/worker';",
+          )
+          .replace(
+            'export const mastra = new Mastra({',
+            `class CleanupWorker extends MastraWorker {
+  readonly name = 'cleanup-jobs';
+  get isRunning() { return false; }
+  async start() {}
+  async stop() {}
+}
+class MastraFactory {
+  constructor(private readonly config: Record<string, unknown>) {}
+  async prepare() { return this.config; }
+}
+const factory = new MastraFactory({ storage: {}, pubsub: {} });
+const preparedArgs = await factory.prepare();
+export const mastra = new Mastra({
+  ...preparedArgs,
+  scheduler: { tickIntervalMs: 10_000 },
+  backgroundTasks: { enabled: true, globalConcurrency: 20, mode: 'worker' },
+  workers: [new CleanupWorker()],`,
+          );
+
+        try {
+          await writeFile(sourcePath, enabledSource);
+          await runBuild(fixturePath);
+
+          const outputPath = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+          const outputFiles = await readdir(outputPath);
+          expect(outputFiles).not.toContain('workers-config.mjs');
+          expect(outputFiles).not.toContain('worker-manifest.mjs');
+
+          const workersConfig = JSON.parse(await readFile(join(outputPath, 'workers.json'), 'utf-8'));
+          expect(workersConfig).toEqual({
+            version: 1,
+            orchestration: { enabled: true },
+            scheduler: { enabled: true, tickIntervalMs: 10_000 },
+            backgroundTasks: { enabled: true, globalConcurrency: 20, mode: 'worker' },
+            custom: ['cleanup-jobs'],
+          });
+        } finally {
+          await writeFile(sourcePath, originalSource);
+          await runBuild(fixturePath);
+        }
+
+        const workersPath = join(fixturePath, 'apps', 'custom', '.mastra', 'output', 'workers.json');
+        expect(JSON.parse(await readFile(workersPath, 'utf-8'))).toBeNull();
+      },
+      timeout,
+    );
 
     afterAll(async () => {
       if (proc) {
@@ -397,6 +844,130 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
     }, timeout);
 
     runApiTests(port);
+
+    it(
+      'drains an in-flight response before the generated server exits on SIGTERM',
+      async () => {
+        // Run the built server directly and signal it directly. Going through
+        // `npm run start` (npm -> sh -> mastra CLI -> node) is not a reliable
+        // signal chain on CI runners: the SIGTERM sent to npm never reached
+        // the server, the stream never ended, and the test hung until its
+        // timeout. CLI signal forwarding is covered by unit tests in
+        // packages/cli/src/commands/start/start.test.ts; the behavior under
+        // test here is the generated server's graceful drain.
+        const drainPort = await getPort();
+        const outputDir = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+        const drainController = new AbortController();
+        const server = execaNode('index.mjs', {
+          cwd: outputDir,
+          cancelSignal: drainController.signal,
+          env: {
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            MASTRA_PORT: drainPort.toString(),
+          },
+        });
+        activeProcesses.push({ controller: drainController, proc: server });
+
+        try {
+          // Poll the server until it's ready
+          const maxAttempts = 60;
+          for (let i = 0; i < maxAttempts; i++) {
+            try {
+              const res = await fetch(`http://localhost:${drainPort}/api/tools`);
+              if (res.ok) break;
+            } catch {
+              // Server not ready yet
+            }
+            if (i === maxAttempts - 1) {
+              throw new Error('Drain test server failed to start within timeout');
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          const response = await fetch(`http://localhost:${drainPort}/shutdown-drain`);
+          const reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          const firstChunk = await reader.read();
+          expect(decoder.decode(firstChunk.value)).toBe('started\n');
+
+          server.kill('SIGTERM');
+
+          let remaining = '';
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            remaining += decoder.decode(chunk.value, { stream: true });
+          }
+
+          expect(remaining).toBe('finished\n');
+          await expect(server).resolves.toMatchObject({ exitCode: 0 });
+          // Full shutdown includes the drain window plus core teardown; the vitest
+          // default 5s timeout is tighter than the server's own worst-case bounds.
+        } finally {
+          // Never leave the drain server running if an assertion failed.
+          server.kill('SIGKILL');
+          await Promise.race([server.catch(() => {}), new Promise(resolve => setTimeout(resolve, 5_000))]);
+        }
+      },
+      timeout,
+    );
+
+    it(
+      'lets an in-flight evented workflow run finish before the generated server exits on SIGTERM',
+      async () => {
+        // The route starts the run without awaiting it and responds at once, so
+        // there is no open HTTP connection for the request drain to hold the
+        // process open. Only `mastra.shutdown({ drainTimeout })` — which the
+        // generated server must forward `server.drainTimeout` into — keeps
+        // pubsub alive long enough for the step to finish and print its marker.
+        const drainPort = await getPort();
+        const outputDir = join(fixturePath, 'apps', 'custom', '.mastra', 'output');
+        const drainController = new AbortController();
+        const server = execaNode('index.mjs', {
+          cwd: outputDir,
+          cancelSignal: drainController.signal,
+          env: {
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            MASTRA_PORT: drainPort.toString(),
+          },
+        });
+        activeProcesses.push({ controller: drainController, proc: server });
+
+        let stdout = '';
+        server.stdout?.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+        });
+
+        try {
+          const maxAttempts = 60;
+          for (let i = 0; i < maxAttempts; i++) {
+            try {
+              const res = await fetch(`http://localhost:${drainPort}/api/tools`);
+              if (res.ok) break;
+            } catch {
+              // Server not ready yet
+            }
+            if (i === maxAttempts - 1) {
+              throw new Error('Workflow drain test server failed to start within timeout');
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          const response = await fetch(`http://localhost:${drainPort}/shutdown-drain-workflow`, { method: 'POST' });
+          expect(response.ok).toBe(true);
+          expect(stdout).not.toContain('shutdown-drain-workflow:finished');
+
+          server.kill('SIGTERM');
+
+          await expect(server).resolves.toMatchObject({ exitCode: 0 });
+          expect(stdout).toContain('shutdown-drain-workflow:finished');
+        } finally {
+          server.kill('SIGKILL');
+          await Promise.race([server.catch(() => {}), new Promise(resolve => setTimeout(resolve, 5_000))]);
+        }
+      },
+      timeout,
+    );
   });
 
   describe.sequential('build without externals', async () => {
@@ -491,100 +1062,64 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
           expect(dependencies[pkg]).toMatch(/^[\d^~>=<]/);
         }
       }
+
+      // Automatic version resolution must read the copy installed for the app (0.4.0),
+      // not the older copy installed at the workspace root (0.2.0) (#18849).
+      expect(dependencies['unicorn-magic']).toBe('0.4.0');
     });
   });
 
-  describe.sequential('extra bundler entries', async () => {
-    let originalConfig: string;
-    const mastraDir = () => join(fixturePath, 'apps', 'custom', 'src', 'mastra');
-    const mastraConfigPath = () => join(mastraDir(), 'index.ts');
-    const workerSourcePath = () => join(mastraDir(), 'voice-worker.ts');
-    const outputDir = () => join(fixturePath, 'apps', 'custom', '.mastra', 'output');
-
-    // `date-fns` is a dependency of apps/custom that no source file imports, so it can
-    // only reach the built output through the extra entry below. That makes it a probe
-    // for the dependency-analysis contract: extra entries are analyzed, so their
-    // externals land in the generated package.json and resolve at runtime.
-    beforeAll(async () => {
-      originalConfig = await readFile(mastraConfigPath(), 'utf-8');
-
-      await writeFile(
-        workerSourcePath(),
-        [
-          `import { format } from 'date-fns';`,
-          ``,
-          `export default { kind: 'voice-worker', entryUrl: import.meta.url };`,
-          ``,
-          // Build and format from local calendar fields on both sides, so the result is the
-          // same in every timezone. `formatISO(new Date(0))` would not be: date-fns formats
-          // in local time, so the epoch renders as 1969-12-31 anywhere west of UTC.
-          `console.log('VOICE_WORKER_OK ' + JSON.stringify({ entryUrl: import.meta.url, stamp: format(new Date(2020, 0, 2), 'yyyy-MM-dd') }));`,
-          ``,
-        ].join('\n'),
-      );
-
-      // Keep date-fns external so it has to be installed rather than inlined, which is
-      // what makes running the worker prove the manifest is correct.
-      const modifiedConfig = originalConfig.replace(
-        /bundler:\s*\{\s*externals:\s*\[[^\]]*\],?\s*\}/m,
-        `bundler: {\n    externals: ['bcrypt', 'date-fns'],\n    entries: { 'voice-worker': './voice-worker.ts' },\n  }`,
-      );
-      expect(modifiedConfig).not.toBe(originalConfig);
-      await writeFile(mastraConfigPath(), modifiedConfig);
-
-      await runBuild(fixturePath);
-    }, timeout);
-
-    afterAll(async () => {
-      await writeFile(mastraConfigPath(), originalConfig);
-      await rm(workerSourcePath(), { force: true });
-    });
-
-    it('emits the extra entry as its own bundle beside the server', async () => {
-      const serverBundle = await readFile(join(outputDir(), 'index.mjs'), 'utf-8');
-      const workerBundle = await readFile(join(outputDir(), 'voice-worker.mjs'), 'utf-8');
-
-      expect(workerBundle).toContain('VOICE_WORKER_OK');
-      // The server must be untouched by the extra entry.
-      expect(serverBundle).not.toContain('VOICE_WORKER_OK');
-    });
-
-    it('adds dependencies reachable only from the extra entry to the output package.json', async () => {
-      const packageJson = JSON.parse(await readFile(join(outputDir(), 'package.json'), 'utf-8'));
-      const serverBundle = await readFile(join(outputDir(), 'index.mjs'), 'utf-8');
-
-      // The server bundle never references date-fns, so its presence in the manifest is
-      // attributable to the extra entry alone.
-      expect(serverBundle).not.toMatch(/['"]date-fns['"]/);
-      expect(packageJson.dependencies).toHaveProperty('date-fns');
-    });
-
+  describe.sequential('workspace subpath externals', () => {
     it(
-      'runs the built extra entry as its own process',
+      'should not analyze dependencies listed in bundler externals',
       async () => {
-        // Only succeeds if date-fns was installed into the output, which in turn only
-        // happens if the extra entry was analyzed. LiveKit re-imports this path in
-        // forked child processes, so import.meta.url must resolve to the built file.
-        const { stdout } = await execaNode('voice-worker.mjs', { cwd: outputDir() });
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-analysis-external-${pkgManager}-`));
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
 
-        expect(stdout).toContain('VOICE_WORKER_OK');
-        const payload = JSON.parse(stdout.slice(stdout.indexOf('{')));
-        expect(payload.entryUrl.endsWith('/.mastra/output/voice-worker.mjs')).toBe(true);
-        expect(payload.stamp).toBe('2020-01-02');
+          const corePath = join(isolatedFixturePath, 'apps', 'custom', 'node_modules', '@mastra', 'core', 'dist');
+          await mkdir(join(corePath, 'runtime-context'), { recursive: true });
+          await writeFile(
+            join(corePath, 'runtime-context', 'index.js'),
+            `export { RequestContext as RuntimeContext } from '../request-context/index.js';`,
+          );
 
-        const workerModule = await import(pathToFileURL(join(outputDir(), 'voice-worker.mjs')).href);
-        expect(workerModule.default).toEqual({
-          kind: 'voice-worker',
-          entryUrl: pathToFileURL(join(outputDir(), 'voice-worker.mjs')).href,
-        });
+          const appDir = join(isolatedFixturePath, 'apps', 'custom');
+          const unsafePackageDir = join(appDir, 'node_modules', 'analysis-unsafe');
+          await mkdir(unsafePackageDir, { recursive: true });
+          await Promise.all([
+            writeFile(
+              join(unsafePackageDir, 'package.json'),
+              JSON.stringify({ name: 'analysis-unsafe', version: '1.0.0', type: 'module', exports: './index.js' }),
+            ),
+            writeFile(join(unsafePackageDir, 'index.js'), 'export const broken = ;'),
+          ]);
+
+          const mastraConfigPath = join(appDir, 'src', 'mastra', 'index.ts');
+          const mastraConfig = await readFile(mastraConfigPath, 'utf-8');
+          await writeFile(
+            mastraConfigPath,
+            `import 'analysis-unsafe';\n${mastraConfig.replace(
+              "externals: ['bcrypt', '@inner/subpath-only']",
+              "externals: ['analysis-unsafe', 'bcrypt', '@inner/subpath-only']",
+            )}`,
+          );
+
+          const buildResult = await execa(pkgManager, ['build'], {
+            cwd: appDir,
+            reject: false,
+            env: { ...process.env, MASTRA_BUILD_SKIP_INSTALL: 'true' },
+          });
+          expect(buildResult.exitCode, `${buildResult.stdout}\n${buildResult.stderr}`).toBe(0);
+        } finally {
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
       },
       timeout,
     );
-  });
 
-  describe.sequential('subpath-only externals', () => {
     it(
-      'should build transitive workspace dependencies with subpath-only exports and externals true',
+      'should build a workspace subpath imported transitively when the app imports the package root',
       async () => {
         const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-subpath-test-${pkgManager}-`));
         await setupMonorepo(isolatedFixturePath, pkgManager);
@@ -606,7 +1141,18 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
         try {
           await writeFile(mastraConfigPath, originalMastraConfig.replace(/externals:\s*\[[^\]]*\]/, 'externals: true'));
 
-          await runBuild(isolatedFixturePath);
+          const buildResult = await execa(pkgManager, ['build'], {
+            cwd: join(isolatedFixturePath, 'apps', 'custom'),
+            reject: false,
+            env: process.env,
+          });
+          expect(buildResult.exitCode).toBe(0);
+
+          const bundledEntry = await readFile(
+            join(isolatedFixturePath, 'apps', 'custom', '.mastra', 'output', 'index.mjs'),
+            'utf-8',
+          );
+          expect(bundledEntry).not.toContain('@inner/subpath-only/value');
 
           proc = execaNode('index.mjs', {
             cwd: join(isolatedFixturePath, 'apps', 'custom', '.mastra', 'output'),
@@ -640,7 +1186,7 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
           const res = await fetch(`http://localhost:${port}/transitive-workspace`);
           const body = await res.json();
           expect(res.status).toBe(200);
-          expect(body).toEqual({ value: 'a -> b -> c', app: 'App value is BEFORE.' });
+          expect(body).toEqual({ value: 'a -> b -> c', root: 'root', app: 'App value is BEFORE.' });
         } finally {
           if (proc) {
             try {
@@ -655,6 +1201,249 @@ describe.sequential.for([['pnpm'] as const])(`%s monorepo`, ([pkgManager]) => {
           }
 
           await writeFile(mastraConfigPath, originalMastraConfig);
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
+      },
+      timeout,
+    );
+
+    it(
+      'should reject an unresolved subpath from an externalized workspace package',
+      async () => {
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-missing-dep-test-${pkgManager}-`));
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
+
+          const corePath = join(isolatedFixturePath, 'apps', 'custom', 'node_modules', '@mastra', 'core', 'dist');
+          await mkdir(join(corePath, 'runtime-context'), { recursive: true });
+          await writeFile(
+            join(corePath, 'runtime-context', 'index.js'),
+            `export { RequestContext as RuntimeContext } from '../request-context/index.js';`,
+          );
+
+          const transitiveDependencyPath = join(isolatedFixturePath, 'packages', 'transitive-c', 'src', 'index.js');
+          const transitiveDependencySource = await readFile(transitiveDependencyPath, 'utf-8');
+          await writeFile(
+            transitiveDependencyPath,
+            transitiveDependencySource.replace('@inner/subpath-only/value', '@inner/subpath-only/missing'),
+          );
+
+          const buildResult = await execa(pkgManager, ['build'], {
+            cwd: join(isolatedFixturePath, 'apps', 'custom'),
+            reject: false,
+            env: process.env,
+          });
+          const output = `${buildResult.stdout}\n${buildResult.stderr}`;
+
+          expect(buildResult.exitCode, output).toBe(1);
+          expect(output).toContain('Could not resolve workspace package subpath "@inner/subpath-only/missing".');
+        } finally {
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
+      },
+      timeout,
+    );
+  });
+
+  describe.sequential('Studio control route authentication', () => {
+    it(
+      'keeps Studio control routes public during development when server auth is configured',
+      async () => {
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-studio-auth-test-${pkgManager}-`));
+        const port = await getPort();
+        const controller = new AbortController();
+        let proc: ReturnType<typeof execa> | undefined;
+
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
+
+          const corePath = join(isolatedFixturePath, 'apps', 'custom', 'node_modules', '@mastra', 'core', 'dist');
+          await mkdir(join(corePath, 'runtime-context'), { recursive: true });
+          await writeFile(
+            join(corePath, 'runtime-context', 'index.js'),
+            `export { RequestContext as RuntimeContext } from '../request-context/index.js';`,
+          );
+
+          const mastraConfigPath = join(isolatedFixturePath, 'apps', 'custom', 'src', 'mastra', 'index.ts');
+          const originalMastraConfig = await readFile(mastraConfigPath, 'utf-8');
+          const authenticatedMastraConfig = originalMastraConfig
+            .replace(
+              "import { ConsoleLogger } from '@mastra/core/logger';",
+              "import { ConsoleLogger } from '@mastra/core/logger';\nimport { SimpleAuth } from '@mastra/core/server';",
+            )
+            .replace(
+              'server: {',
+              "server: {\n    auth: new SimpleAuth({ tokens: { 'test-token': { sub: 'test-user' } } }),",
+            );
+          await writeFile(mastraConfigPath, authenticatedMastraConfig);
+
+          proc = execa('npm', ['run', 'dev'], {
+            cwd: join(isolatedFixturePath, 'apps', 'custom'),
+            cancelSignal: controller.signal,
+            gracefulCancel: true,
+            env: {
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+              MASTRA_PORT: port.toString(),
+            },
+          });
+          activeProcesses.push({ controller, proc });
+
+          await new Promise<void>((resolve, reject) => {
+            proc!.stderr?.on('data', data => {
+              const errMsg = data?.toString();
+              if (errMsg?.includes('punycode') || errMsg?.includes('falling back to an in-memory store')) {
+                return;
+              }
+              reject(new Error('failed to start authenticated Studio dev server: ' + errMsg));
+            });
+            proc!.stdout?.on('data', data => {
+              console.log(data?.toString());
+              if (data?.toString()?.includes(`http://localhost:${port}`)) {
+                resolve();
+              }
+            });
+          });
+
+          for (const [path, method] of [
+            ['/refresh-events', 'GET'],
+            ['/__refresh', 'POST'],
+            ['/__hot-reload-status', 'GET'],
+          ] as const) {
+            const response = await fetch(`http://localhost:${port}${path}`, { method });
+            expect(response.status).toBe(200);
+            await response.body?.cancel();
+          }
+        } finally {
+          if (proc) {
+            try {
+              proc.kill('SIGKILL');
+              await Promise.race([proc.catch(() => {}), new Promise(resolve => setTimeout(resolve, 5_000))]);
+            } catch (err) {
+              // @ts-expect-error - killed is not typed
+              if (!err.killed) {
+                console.log('failed to kill authenticated Studio dev proc', err);
+              }
+            }
+          }
+          await new Promise(resolve => setTimeout(resolve, 1_000));
+          await removeOutputDir(isolatedFixturePath);
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
+      },
+      timeout,
+    );
+  });
+
+  describe.sequential('pnpm build approvals', () => {
+    it(
+      'reports blocked native build scripts as a user configuration error',
+      async () => {
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-build-approval-test-${pkgManager}-`));
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
+          const workspacePath = join(isolatedFixturePath, 'pnpm-workspace.yaml');
+          const workspace = await readFile(workspacePath, 'utf8');
+          await writeFile(workspacePath, workspace.replace('  bcrypt: true\n', ''));
+
+          await removeOutputDir(isolatedFixturePath);
+          const build = await execa(pkgManager, ['build'], {
+            cwd: join(isolatedFixturePath, 'apps', 'custom'),
+            env: process.env,
+            reject: false,
+          });
+          const output = `${build.stdout}\n${build.stderr}`;
+
+          expect(build.exitCode).not.toBe(0);
+          expect(output).toContain('pnpm blocked build scripts for: bcrypt');
+          expect(output).toContain('Add these packages to allowBuilds in pnpm-workspace.yaml and retry the build.');
+          expect(output).not.toContain('DEPLOYER_BUNDLER_BUNDLE_STAGE_FAILED');
+        } finally {
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
+      },
+      timeout,
+    );
+  });
+
+  describe.sequential('reproducible bundles', () => {
+    it(
+      'produces identical bundles when invoked from the app and monorepo roots',
+      async () => {
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-reproducible-test-${pkgManager}-`));
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
+
+          const appDir = join(isolatedFixturePath, 'apps', 'custom');
+          const build = async (cwd: string, args: string[], outputRoot: string, cliPath?: string) => {
+            await rm(dirname(outputRoot), { recursive: true, force: true });
+            const options = {
+              cwd,
+              env: { ...process.env, MASTRA_BUILD_SKIP_INSTALL: 'true' },
+              reject: false,
+            };
+            const result = cliPath ? await execaNode(cliPath, args, options) : await execa(pkgManager, args, options);
+            expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
+            const outputDigests = await getDirectoryDigests(outputRoot);
+            return Object.fromEntries(Object.entries(outputDigests).filter(([path]) => path.endsWith('.mjs')));
+          };
+
+          const first = await build(appDir, ['build'], join(appDir, '.mastra', 'output'));
+          const second = await build(
+            isolatedFixturePath,
+            ['build', '--root', '.', '--dir', 'apps/custom/src/mastra'],
+            join(isolatedFixturePath, '.mastra', 'output'),
+            join(appDir, 'node_modules', 'mastra', 'dist', 'index.js'),
+          );
+
+          expect(
+            Object.keys(first).filter(path => path.startsWith('tools/') && path.endsWith('.mjs')).length,
+          ).toBeGreaterThan(0);
+          expect(second).toEqual(first);
+        } finally {
+          await rm(isolatedFixturePath, { recursive: true, force: true });
+        }
+      },
+      timeout,
+    );
+  });
+
+  describe.sequential('MASTRA_BUILD_SKIP_INSTALL', () => {
+    it(
+      'skips dependency installation in the build output when the env var is set',
+      async () => {
+        const isolatedFixturePath = await mkdtemp(join(tmpdir(), `mastra-monorepo-skip-install-test-${pkgManager}-`));
+        try {
+          await setupMonorepo(isolatedFixturePath, pkgManager);
+
+          const appDir = join(isolatedFixturePath, 'apps', 'custom');
+          const outputRoot = join(appDir, '.mastra', 'output');
+
+          await removeOutputDir(isolatedFixturePath);
+          const skipBuild = await execa(pkgManager, ['build'], {
+            cwd: appDir,
+            env: { ...process.env, MASTRA_BUILD_SKIP_INSTALL: 'true' },
+            reject: false,
+          });
+          const skipOutput = `${skipBuild.stdout}\n${skipBuild.stderr}`;
+
+          expect(skipBuild.exitCode).toBe(0);
+          expect(skipOutput).toContain('Skipping dependency installation (MASTRA_BUILD_SKIP_INSTALL set)');
+          // No dependencies installed and no lockfile generated anywhere in the build output.
+          expect(await findInDir(outputRoot, 'node_modules')).toBe(false);
+          expect(await findInDir(outputRoot, 'package-lock.json')).toBe(false);
+
+          await removeOutputDir(isolatedFixturePath);
+          const defaultBuild = await execa(pkgManager, ['build'], {
+            cwd: appDir,
+            env: process.env,
+            reject: false,
+          });
+
+          expect(defaultBuild.exitCode).toBe(0);
+          // Default path installs dependencies into the build output.
+          expect(await findInDir(outputRoot, 'node_modules')).toBe(true);
+        } finally {
+          await removeOutputDir(isolatedFixturePath);
           await rm(isolatedFixturePath, { recursive: true, force: true });
         }
       },

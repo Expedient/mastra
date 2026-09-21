@@ -1,9 +1,7 @@
 import { Button } from '@mastra/playground-ui/components/Button';
-import { Input } from '@mastra/playground-ui/components/Input';
-import { Label } from '@mastra/playground-ui/components/Label';
+import { TextFieldBlock } from '@mastra/playground-ui/components/FormFieldBlocks';
 import { Popover, PopoverContent, PopoverTrigger } from '@mastra/playground-ui/components/Popover';
 import { Txt } from '@mastra/playground-ui/components/Txt';
-import { Icon } from '@mastra/playground-ui/icons/Icon';
 
 import { CloudUpload, Link, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -16,6 +14,7 @@ import { useComposerAttachments } from './composer-attachments';
  */
 export const AttachFilePopover = () => {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
   const { addFiles, addUrl } = useComposerAttachments();
 
   const openFilePicker = () => {
@@ -35,11 +34,16 @@ export const AttachFilePopover = () => {
     // `change` event runs (and reads `files`) before we remove the input.
     const onWindowFocus = () => setTimeout(cleanup, 0);
 
-    input.onchange = e => {
+    input.onchange = async e => {
       const fileList = (e.target as HTMLInputElement).files;
       if (fileList && fileList.length > 0) {
-        addFiles(fileList);
-        setOpen(false);
+        const rejected = await addFiles(fileList);
+        setError(
+          rejected.length > 0
+            ? `Cannot read these files in Studio: ${rejected.join(', ')}. Export spreadsheet data as CSV or upload a text file instead.`
+            : '',
+        );
+        if (rejected.length === 0) setOpen(false);
       }
       cleanup();
     };
@@ -70,30 +74,29 @@ export const AttachFilePopover = () => {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={value => {
+        setOpen(value);
+        setError('');
+      }}
+    >
       <PopoverTrigger asChild>
         <Button variant="default" size="icon-md" type="button" tooltip="Add attachment">
-          <PlusIcon className="text-neutral3 hover:text-neutral6 h-5 w-5" />
+          <PlusIcon className="text-muted-foreground hover:text-foreground h-5 w-5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-4">
         <form onSubmit={handleSubmit} className="flex flex-row items-end gap-2">
-          <div className="w-full space-y-1">
-            <Label htmlFor="url-attachment" className="text-neutral3 text-ui-md">
-              Public URL
-            </Label>
-            <Input
-              type="text"
-              name="url-attachment"
-              id="url-attachment"
-              className="w-full"
-              placeholder="https://placehold.co/600x400/png"
-            />
-          </div>
-          <Button type="submit" className="h-8!" variant="default">
-            <Icon>
-              <Link />
-            </Icon>
+          <TextFieldBlock
+            name="url-attachment"
+            label="Public URL"
+            type="url"
+            className="w-full"
+            placeholder="https://placehold.co/600x400/png"
+            errorMsg={error}
+          />
+          <Button type="submit" className="h-8!" variant="default" icon={<Link />}>
             Add
           </Button>
         </form>
@@ -101,13 +104,13 @@ export const AttachFilePopover = () => {
         <hr className="border-border1 my-3" />
 
         <div className="space-y-2">
-          <Txt variant="ui-md" className="text-neutral3">
+          <Txt variant="ui-md" className="text-muted-foreground">
             Or from your computer
           </Txt>
           <button
             type="button"
             onClick={openFilePicker}
-            className="border-border1 text-neutral3 hover:bg-surface2 active:bg-surface3 flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed"
+            className="border-border1 text-muted-foreground hover:bg-surface2 active:bg-surface3 flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed"
           >
             <CloudUpload className="size-8" />
             <Txt variant="ui-lg">Add a local file</Txt>

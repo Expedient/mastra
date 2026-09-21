@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 /**
  * Converts a doGenerate result to a ReadableStream format.
  * This is shared between V2 and V3 model wrappers since the content/result structure is compatible.
@@ -76,7 +74,7 @@ export function createStreamFromGenerateResult(result: {
             text: string;
             providerMetadata?: unknown;
           };
-          const id = `msg_${randomUUID()}`;
+          const id = `msg_${globalThis.crypto.randomUUID()}`;
           controller.enqueue({
             type: 'text-start',
             id,
@@ -86,13 +84,15 @@ export function createStreamFromGenerateResult(result: {
             type: 'text-delta',
             id,
             delta: text.text,
+            providerMetadata: text.providerMetadata,
           });
           controller.enqueue({
             type: 'text-end',
             id,
+            providerMetadata: text.providerMetadata,
           });
         } else if (message.type === 'reasoning') {
-          const id = `reasoning_${randomUUID()}`;
+          const id = `reasoning_${globalThis.crypto.randomUUID()}`;
           const reasoning = message as {
             type: 'reasoning';
             text: string;
@@ -119,11 +119,13 @@ export function createStreamFromGenerateResult(result: {
             type: 'file';
             mediaType: string;
             data: unknown;
+            providerMetadata?: unknown;
           };
           controller.enqueue({
             type: 'file',
             mediaType: file.mediaType,
             data: file.data,
+            providerMetadata: file.providerMetadata,
           });
         } else if (message.type === 'source') {
           const source = message as {
@@ -156,6 +158,13 @@ export function createStreamFromGenerateResult(result: {
               providerMetadata: source.providerMetadata,
             });
           }
+        } else if (message.type === 'reasoning-file' || message.type === 'custom') {
+          // Stream part and content part shapes are identical for these types, so pass them through as-is.
+          controller.enqueue(message);
+        } else {
+          // Unknown content types must not disappear silently: surface them as raw stream parts
+          // so consumers opting into raw chunks still receive the provider data.
+          controller.enqueue({ type: 'raw', rawValue: message });
         }
       }
 
