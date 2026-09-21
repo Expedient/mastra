@@ -53,9 +53,4 @@ npm install @mastra/core
 
 ## License
 
-This package uses a dual-license model:
-
-- **Apache License 2.0**: The vast majority of this codebase is open source under Apache-2.0.
-- **Mastra Enterprise License**: Code in any directory named `ee/` (e.g., `@mastra/core/auth/ee`) is source-available under the Mastra Enterprise License. These features require a valid enterprise license for production use but can be freely used for development and testing.
-
-See [LICENSE.md](https://github.com/mastra-ai/mastra/blob/main/LICENSE.md) for the full license mapping and [ee/LICENSE](https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE) for the enterprise license terms.
+This package is licensed under the Apache License 2.0. See [LICENSE.md](https://github.com/Expedient/mastra/blob/main/LICENSE.md).

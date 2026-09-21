@@ -1,21 +1,10 @@
-Portions of this software are licensed as follows:
-
-- All content that resides under any directory named `ee/` within this
-  repository, including but not limited to:
-  - `@mastra/core/auth/ee`
-  - `@mastra/core/agent-builder/ee`
-  - `@mastra/editor/ee`
-
-  is licensed under the license defined in [`ee/LICENSE`](https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE).
-
-- All third-party components incorporated into the Mastra Software are
-  licensed under the original license provided by the owner of the
-  applicable component.
-
-- Content outside of the above-mentioned directories or restrictions is
-  available under the "Apache License 2.0" as defined below.
-
 # Apache License 2.0
+
+This Expedient Mastra fork is licensed under the Apache License 2.0.
+
+Third-party components incorporated into this software remain under the
+original licenses provided by their owners.
+
 
 Copyright (c) 2025 Kepler Software, Inc.
 

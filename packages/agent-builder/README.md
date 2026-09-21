@@ -31,7 +31,7 @@ console.log(result.text);
 
 The constructor accepts the primary `model`, an optional `summaryModel`, and the target `projectPath`. It configures memory and builder-oriented processors internally, then applies deterministic generation defaults for multi-step code changes.
 
-This package is intended for the Mastra Agent Builder product rather than as a stable general-purpose public API. Production use of the Agent Builder experience is subject to the [Mastra Enterprise License](https://github.com/mastra-ai/mastra/blob/main/ee/LICENSE).
+This package is intended for the Mastra Agent Builder product rather than as a stable general-purpose public API.
 
 - [Agent Builder documentation](https://agent-builder.mastra.ai/)
 - [`AgentBuilderOptions` reference](https://agent-builder.mastra.ai/reference/agent-builder-options)
