@@ -549,7 +549,7 @@
         },
         {
           "path": "packages/_internals/auth/src/authorization.ts",
-          "sha256": "1d7e7481365b0e87d945842dfbfebda7fd49b9072ae9bb25157460963f12798a"
+          "sha256": "c6b5a95e2edbd2303cc328f877a73f63c2cc165fdef3f36397be62ede18a1467"
         }
       ],
       "replacementRegressionCheck": "source, bundle, license, and OS-level network gates reject the source-established EE boundary and behaviors",
@@ -621,7 +621,7 @@
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
-          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+          "sha256": "b8b81543b17cdedfc8c0f9c0e15ae7d2b66afbff0341947a79afbdd43cb1b9b0"
         }
       ],
       "replacementRegressionCheck": "graph rejects auth/ee descendants and exposes public auth/authorization",
@@ -657,7 +657,7 @@
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
-          "sha256": "551bd61b444cd50784752b55396553f90fdfb0868971360f4766445de0994a5d"
+          "sha256": "b8b81543b17cdedfc8c0f9c0e15ae7d2b66afbff0341947a79afbdd43cb1b9b0"
         }
       ],
       "replacementRegressionCheck": "actual tsdown entry fingerprint, generated path scan, and archive scan reject auth EE bundles",
