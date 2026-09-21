@@ -545,7 +545,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/_internals/auth/package.json",
-          "sha256": "3eb78d98b1bba87c4025ac31d1256d1c09e3bc80bfd166d04ed4a2a96f5d9266"
+          "sha256": "fb03498750f91dbdb4bf29bf39043e4635b2f0dfb9b45eeffabdb3b955642a45"
         },
         {
           "path": "packages/_internals/auth/src/authorization.ts",

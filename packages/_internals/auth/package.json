@@ -50,6 +50,16 @@
         "default": "./dist/session/index.cjs"
       }
     },
+    "./authorization": {
+      "import": {
+        "types": "./dist/authorization.d.ts",
+        "default": "./dist/authorization.js"
+      },
+      "require": {
+        "types": "./dist/authorization.d.ts",
+        "default": "./dist/authorization.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
