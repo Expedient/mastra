@@ -3,7 +3,14 @@ import type { User } from './index';
 export type PermissionPattern = string;
 export type MastraFGAPermission = string;
 export type MastraFGAPermissionInput = string;
-export type ActorSignal = true | { actorKind: 'system'; sourceWorkflow?: string };
+export type ActorSignal =
+  | true
+  | {
+      actorKind: 'system';
+      sourceWorkflow?: string;
+      /** Opt-in inheritance of this actor into nested agent/tool calls. */
+      propagate?: boolean;
+    };
 
 export interface EEUser extends User {
   roles?: string[];
