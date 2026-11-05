@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isTaskTool, presentTool, stringifyToolValue, toolEdit } from './tool-presentation';
+import { hasToolArguments, isTaskTool, presentTool, stringifyToolValue, toolEdit } from './tool-presentation';
 
 describe('presentTool', () => {
   it('maps stable workspace aliases to humanized actions with their salient argument', () => {
@@ -33,11 +33,36 @@ describe('presentTool', () => {
     });
   });
 
+  it("adds a command's description, keeping the label, detail, and command for consumers that pick fields", () => {
+    const command = "cd packages/core && rg -n 'processor' src | head -20";
+    const presentation = presentTool('execute_command', { description: 'Finding  the processor\n wiring', command });
+    expect(presentation).toMatchObject({
+      label: 'Run',
+      detail: "rg -n 'processor' src | head -20",
+      description: 'Finding the processor wiring',
+      command,
+    });
+  });
+
+  it('falls back to the command when the description is blank', () => {
+    const presentation = presentTool('execute_command', { description: '  ', command: 'git status' });
+    expect(presentation).toMatchObject({ label: 'Run', detail: 'git status', command: 'git status' });
+    expect(presentation.description).toBeUndefined();
+  });
+
   it('strips the raw workspace prefix before lookup', () => {
     expect(presentTool('mastra_workspace_read_file', { path: 'a.ts' })).toMatchObject({
       label: 'Read',
       detail: 'a.ts',
     });
+  });
+
+  it('turns the agent indicator into the work each call does, and a tool it does not know into a nut', () => {
+    expect(presentTool('execute_command', { command: 'ls' }).pose).toBe('running');
+    expect(presentTool('view', { path: 'a.ts' }).pose).toBe('reading');
+    expect(presentTool('mastra_workspace_grep', { pattern: 'x' }).pose).toBe('searching');
+    expect(presentTool('web_search', { query: 'oauth' }).pose).toBe('browsing');
+    expect(presentTool('fetch_pull_request', undefined).pose).toBe('tool');
   });
 
   it('prettifies unknown tool names instead of surfacing raw identifiers', () => {
@@ -86,5 +111,25 @@ describe('isTaskTool', () => {
   it('names the four task tools the docked task list draws, and nothing else', () => {
     expect(['task_write', 'task_update', 'task_complete', 'task_check'].every(isTaskTool)).toBe(true);
     expect(['view', 'task', 'ask_user'].some(isTaskTool)).toBe(false);
+  });
+});
+
+describe('hasToolArguments', () => {
+  it('has nothing to show before any input arrives', () => {
+    expect(hasToolArguments({ toolName: 'view', args: undefined, argsText: '' })).toBe(false);
+  });
+
+  it('has nothing to show for a tool called without arguments', () => {
+    expect(hasToolArguments({ toolName: 'list_agents', args: {}, argsText: '{}' })).toBe(false);
+  });
+
+  it('shows partial streamed input before it parses', () => {
+    expect(hasToolArguments({ toolName: 'view', args: undefined, argsText: '{"path":"src' })).toBe(true);
+  });
+
+  it('shows an edit even when ordinary arguments are hidden', () => {
+    const args = { path: 'a.ts', old_string: 'a', new_string: 'b' };
+    expect(hasToolArguments({ toolName: 'edit_file', args, hideArguments: true })).toBe(true);
+    expect(hasToolArguments({ toolName: 'view', args: { path: 'a.ts' }, hideArguments: true })).toBe(false);
   });
 });

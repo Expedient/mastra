@@ -14,6 +14,7 @@ import {
 } from '../../scripts/generate-api-cli-route-metadata.js';
 import { buildAttentionRoutes } from './attention.js';
 import { buildAutomationRunRoutes } from './automation-runs.js';
+import { BoardRoutes } from './boards.js';
 import {
   attentionQuerySchema,
   createProjectBodySchema,
@@ -24,7 +25,6 @@ import {
   updateProjectBodySchema,
 } from './contracts.js';
 import { ProjectRoutes } from './projects.js';
-import { buildSupervisorRoutes } from './supervisor.js';
 import { WorkItemRoutes } from './work-items.js';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
@@ -55,10 +55,6 @@ function registeredFactoryRoutes() {
     liveSessions: {} as never,
     resolveProject: async () => ({}) as never,
   });
-  const supervisor = buildSupervisorRoutes({
-    workItems: workItems as never,
-    resolveProject: async () => ({}) as never,
-  });
   const automationRuns = buildAutomationRunRoutes({
     auth: {},
     audit: {},
@@ -66,7 +62,15 @@ function registeredFactoryRoutes() {
     workItems,
     configVersion: 'test',
   } as never);
-  return [...projects, ...work, ...attention, ...supervisor, ...automationRuns];
+  const boards = new BoardRoutes({
+    auth: {},
+    audit: {},
+    projects: {},
+    workItems,
+    storage: {},
+    boards: {},
+  } as never).routes();
+  return [...projects, ...work, ...attention, ...automationRuns, ...boards];
 }
 
 describe('Factory route contracts', () => {
@@ -87,6 +91,8 @@ describe('Factory route contracts', () => {
       defaultModelId: null,
       autoRunEnabled: true,
     });
+    expect(updateProjectBodySchema.parse({ modelScope: 'factory' })).toEqual({ modelScope: 'factory' });
+    expect(updateProjectBodySchema.safeParse({ modelScope: 'org' }).success).toBe(false);
     expect(createWorkItemBodySchema.parse({ title: ' Card ', stages: ['intake'], ignored: true })).toEqual({
       title: 'Card',
       stages: ['intake'],
@@ -188,14 +194,7 @@ describe('Factory route contracts', () => {
   });
 
   it('accepts representative successful response envelopes', () => {
-    const ATTENTION_KINDS = [
-      'automation-failed',
-      'automation-proposed',
-      'mention',
-      'activity',
-      'supervisor-finding',
-      'agent-waiting',
-    ];
+    const ATTENTION_KINDS = ['automation-failed', 'automation-proposed', 'mention', 'activity', 'agent-waiting'];
     expect(
       FACTORY_ROUTE_CONTRACTS.projectList.responseSchema.safeParse({ projects: [{ id: projectId }] }).success,
     ).toBe(true);
@@ -211,13 +210,6 @@ describe('Factory route contracts', () => {
         items: [],
         kinds: Object.fromEntries(ATTENTION_KINDS.map(kind => [kind, { open: 0, unread: 0, latest: null }])),
         hasMore: false,
-      }).success,
-    ).toBe(true);
-    expect(
-      FACTORY_ROUTE_CONTRACTS.supervisorHealth.responseSchema.safeParse({
-        checkedAt: new Date().toISOString(),
-        findings: [],
-        counts: { 'decision-failed': 0 },
       }).success,
     ).toBe(true);
   });

@@ -256,6 +256,7 @@ export const LIST_WORKSPACES_ROUTE = createRoute({
         agentName?: string;
         capabilities: {
           hasFilesystem: boolean;
+          hasDynamicFilesystem: boolean;
           hasSandbox: boolean;
           canBM25: boolean;
           canVector: boolean;
@@ -288,8 +289,9 @@ export const LIST_WORKSPACES_ROUTE = createRoute({
             source,
             ...(source === 'agent' && agentId ? { agentId, ...(agentName != null ? { agentName } : {}) } : {}),
             capabilities: {
-              hasFilesystem: !!ws.filesystem,
-              hasSandbox: !!ws.sandbox,
+              hasFilesystem: ws.hasFilesystemConfig(),
+              hasDynamicFilesystem: !ws.filesystem && ws.hasFilesystemConfig(),
+              hasSandbox: ws.hasSandboxConfig(),
               canBM25: ws.canBM25,
               canVector: ws.canVector,
               canHybrid: ws.canHybrid,
@@ -313,8 +315,9 @@ export const LIST_WORKSPACES_ROUTE = createRoute({
             status: globalWorkspace.status,
             source: 'mastra',
             capabilities: {
-              hasFilesystem: !!globalWorkspace.filesystem,
-              hasSandbox: !!globalWorkspace.sandbox,
+              hasFilesystem: globalWorkspace.hasFilesystemConfig(),
+              hasDynamicFilesystem: !globalWorkspace.filesystem && globalWorkspace.hasFilesystemConfig(),
+              hasSandbox: globalWorkspace.hasSandboxConfig(),
               canBM25: globalWorkspace.canBM25,
               canVector: globalWorkspace.canVector,
               canHybrid: globalWorkspace.canHybrid,
@@ -341,8 +344,9 @@ export const LIST_WORKSPACES_ROUTE = createRoute({
                   agentId,
                   agentName: (agent as any).name,
                   capabilities: {
-                    hasFilesystem: !!agentWorkspace.filesystem,
-                    hasSandbox: !!agentWorkspace.sandbox,
+                    hasFilesystem: agentWorkspace.hasFilesystemConfig(),
+                    hasDynamicFilesystem: !agentWorkspace.filesystem && agentWorkspace.hasFilesystemConfig(),
+                    hasSandbox: agentWorkspace.hasSandboxConfig(),
                     canBM25: agentWorkspace.canBM25,
                     canVector: agentWorkspace.canVector,
                     canHybrid: agentWorkspace.canHybrid,
@@ -413,7 +417,7 @@ export const GET_WORKSPACE_ROUTE = createRoute({
               path: mountPath,
               provider: info?.provider ?? mountFs.provider ?? 'unknown',
               readOnly: mountFs.readOnly ?? false,
-              displayName: info?.name ?? mountFs.name,
+              displayName: mountFs.displayName ?? info?.name ?? mountFs.name,
               icon: info?.icon,
               name: mountFs.name,
             });
@@ -434,8 +438,9 @@ export const GET_WORKSPACE_ROUTE = createRoute({
         name: workspace.name,
         status: workspace.status,
         capabilities: {
-          hasFilesystem: !!workspace.filesystem,
-          hasSandbox: !!workspace.sandbox,
+          hasFilesystem: workspace.hasFilesystemConfig(),
+          hasDynamicFilesystem: !workspace.filesystem && workspace.hasFilesystemConfig(),
+          hasSandbox: workspace.hasSandboxConfig(),
           canBM25: workspace.canBM25,
           canVector: workspace.canVector,
           canHybrid: workspace.canHybrid,
@@ -491,7 +496,7 @@ export const WORKSPACE_FS_READ_ROUTE = createRoute({
         throw new HTTPException(404, { message: 'No workspace filesystem configured' });
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       // Check if path exists
       if (!(await workspace.filesystem.exists(decodedPath))) {
@@ -541,7 +546,7 @@ export const WORKSPACE_FS_WRITE_ROUTE = createRoute({
         throw new HTTPException(403, { message: 'Workspace is in read-only mode' });
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       // Handle base64-encoded content for binary files
       let fileContent: string | Buffer = content;
@@ -582,13 +587,13 @@ export const WORKSPACE_FS_LIST_ROUTE = createRoute({
       const workspace = await getWorkspaceById(mastra, workspaceId);
       if (!workspace?.filesystem) {
         return {
-          path: decodeURIComponent(path),
+          path,
           entries: [],
           error: 'No workspace filesystem configured',
         };
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       // Check if path exists
       if (!(await workspace.filesystem.exists(decodedPath))) {
@@ -634,7 +639,7 @@ export const WORKSPACE_FS_DELETE_ROUTE = createRoute({
         throw new HTTPException(403, { message: 'Workspace is in read-only mode' });
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       // Check if path exists (unless force is true)
       const exists = await workspace.filesystem.exists(decodedPath);
@@ -688,7 +693,7 @@ export const WORKSPACE_FS_MKDIR_ROUTE = createRoute({
         throw new HTTPException(403, { message: 'Workspace is in read-only mode' });
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       await workspace.filesystem.mkdir(decodedPath, { recursive: recursive ?? true });
 
@@ -725,7 +730,7 @@ export const WORKSPACE_FS_STAT_ROUTE = createRoute({
         throw new HTTPException(404, { message: 'No workspace filesystem configured' });
       }
 
-      const decodedPath = decodeURIComponent(path);
+      const decodedPath = path;
 
       // Check if path exists
       if (!(await workspace.filesystem.exists(decodedPath))) {
@@ -958,7 +963,7 @@ export const WORKSPACE_GET_SKILL_ROUTE = createRoute({
       }
 
       // Use the optional ?path= query param for disambiguation, otherwise fall back to name
-      const identifier = path ? decodeURIComponent(path) : skillName;
+      const identifier = path ?? skillName;
 
       const skills = await getSkillsById(mastra, workspaceId);
       if (!skills) {
@@ -1011,7 +1016,7 @@ export const WORKSPACE_LIST_SKILL_REFERENCES_ROUTE = createRoute({
       }
 
       // Use the optional ?path= query param for disambiguation, otherwise fall back to name
-      const identifier = path ? decodeURIComponent(path) : skillName;
+      const identifier = path ?? skillName;
 
       const skills = await getSkillsById(mastra, workspaceId);
       if (!skills) {
@@ -1052,12 +1057,8 @@ export const WORKSPACE_GET_SKILL_REFERENCE_ROUTE = createRoute({
     try {
       requireWorkspaceV1Support();
 
-      if (!skillName || !referencePath) {
-        throw new HTTPException(400, { message: 'Skill name and reference path are required' });
-      }
-
       // Use the optional ?path= query param for disambiguation, otherwise fall back to name
-      const identifier = skillPath ? decodeURIComponent(skillPath) : skillName;
+      const identifier = skillPath ?? skillName;
 
       const skills = await getSkillsById(mastra, workspaceId);
       if (!skills) {
@@ -1073,13 +1074,7 @@ export const WORKSPACE_GET_SKILL_REFERENCE_ROUTE = createRoute({
         throw new HTTPException(404, { message: `Skill "${identifier}" not found` });
       }
 
-      // Decode the reference path (it may be URL encoded)
-      let decodedPath: string;
-      try {
-        decodedPath = decodeURIComponent(referencePath);
-      } catch {
-        throw new HTTPException(400, { message: 'Malformed referencePath' });
-      }
+      const decodedPath = referencePath;
 
       // Prevent path traversal via the reference path parameter
       assertSafeFilePath(decodedPath);

@@ -1,12 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
 import type { ActorSignal } from '@mastra/core/auth/authorization';
 import type { RequestContext } from '@mastra/core/di';
 import { getErrorFromUnknown, MastraNonRetryableError } from '@mastra/core/error';
 import type { SerializedError } from '@mastra/core/error';
 import type { PubSub } from '@mastra/core/events';
 import type { Mastra } from '@mastra/core/mastra';
-import type { EntityType } from '@mastra/core/observability';
+import type { EntityType, SpanOutcomeFields } from '@mastra/core/observability';
 import { DefaultExecutionEngine, createTimeTravelExecutionParams } from '@mastra/core/workflows';
 import type {
   ExecutionContext,
@@ -20,6 +19,7 @@ import type { Inngest, BaseContext } from 'inngest';
 import { NonRetriableError } from 'inngest';
 import type { NestedWorkflowResult } from './nested-workflow-output';
 import { NESTED_WORKFLOW_OUTPUT_MODE } from './nested-workflow-output';
+import { workflowTermination } from './observability-compat';
 import { InngestWorkflow } from './workflow';
 
 function isNonRetryableStepFailure(error: unknown): boolean {
@@ -56,6 +56,8 @@ function isNonRetryableStepFailure(error: unknown): boolean {
 }
 
 const retryCountStorage = new AsyncLocalStorage<number>();
+
+const BUILTIN_ERROR_TYPES = [TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError];
 
 export class InngestExecutionEngine extends DefaultExecutionEngine {
   private inngestStep: BaseContext<Inngest>['step'];
@@ -116,8 +118,9 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
 
   /**
    * Execute a step with retry logic for Inngest.
-   * Retries are handled via step-level retry (RetryAfterError thrown INSIDE step.run()).
-   * After retries exhausted, error propagates here and we return a failed result.
+   * Each attempt is its own step.run() that fails as NonRetriableError, so Inngest never
+   * retries step code; this loop owns the retries. After retries are exhausted we return
+   * a failed result instead of rethrowing.
    */
   async executeStepWithRetry<T>(
     stepId: string,
@@ -138,19 +141,28 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
         await new Promise(resolve => setTimeout(resolve, params.delay));
       }
       try {
-        //removed retry config with RetryAfterError from wrapDurableOperation, since we're manually handling retries here
-        const result = await retryCountStorage.run(i, () => this.wrapDurableOperation(stepId, runStep));
+        const result = await retryCountStorage.run(i, () => this.runDurably(stepId, runStep, NonRetriableError));
         return { ok: true, result };
       } catch (e) {
-        const isNonRetryable = isNonRetryableStepFailure(e);
+        // Decide from the serialized failure in the cause, not the thrown error: the
+        // transport error is always NonRetriableError (a StepError named
+        // "NonRetriableError" under a real Inngest server), whatever the step threw.
+        const cause = (e as any)?.cause;
+        const isNonRetryable = isNonRetryableStepFailure(cause?.status === 'failed' ? cause : e);
 
         if (isNonRetryable || i === params.retries) {
-          // After step-level retries exhausted, extract failure from error cause
-          const cause = (e as any)?.cause;
           if (cause?.status === 'failed') {
-            params.stepSpan?.error({
-              error: e,
-              attributes: { status: 'failed' },
+            await this.errorStepSpan({
+              span: params.stepSpan,
+              operationId: `workflow.${params.workflowId}.run.${params.runId}.step.${stepId}.span.error`,
+              errorOptions: {
+                ...workflowTermination({
+                  status: 'failed',
+                  error: cause.error,
+                }),
+                error: getErrorFromUnknown(e),
+                attributes: { status: 'failed' },
+              },
             });
             // Ensure cause.error is an Error instance
             if (cause.error && !(cause.error instanceof Error)) {
@@ -170,9 +182,14 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
             serializeStack: false,
             fallbackMessage: 'Unknown step execution error',
           });
-          params.stepSpan?.error({
-            error: errorInstance,
-            attributes: { status: 'failed' },
+          await this.errorStepSpan({
+            span: params.stepSpan,
+            operationId: `workflow.${params.workflowId}.run.${params.runId}.step.${stepId}.span.error`,
+            errorOptions: {
+              ...workflowTermination({ status: 'failed', error: errorInstance }),
+              error: errorInstance,
+              attributes: { status: 'failed' },
+            },
           });
           return {
             ok: false,
@@ -215,19 +232,36 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
    * in the cause property, we ensure custom properties survive serialization.
    * The cause property is in serialize-error-cjs's allowlist, and when the cause
    * object is finally JSON.stringify'd, our error's toJSON() is called.
+   *
+   * Failures here stay retriable, so a non-zero function-level `retries` covers
+   * transient errors in these operations (spans, event publishing, conditions).
    */
   async wrapDurableOperation<T>(operationId: string, operationFn: () => Promise<T>): Promise<T> {
+    return this.runDurably(operationId, operationFn, Error);
+  }
+
+  /**
+   * Runs `operationFn` in step.run() and throws failures as `ErrorType` with the
+   * serialized failure in the cause. Step code passes NonRetriableError because Inngest
+   * applies the function-level `retries` to every step.run() that throws, and step
+   * retries are already handled by executeStepWithRetry.
+   */
+  private async runDurably<T>(
+    operationId: string,
+    operationFn: () => Promise<T>,
+    ErrorType: new (message: string, options: { cause: unknown }) => Error,
+  ): Promise<T> {
     const result = await this.inngestStep.run(operationId, async () => {
       try {
         const fnResult = await operationFn();
         return fnResult;
       } catch (e) {
         const errorInstance = getErrorFromUnknown(e, {
-          serializeStack: false,
+          serializeStack: true,
           fallbackMessage: 'Unknown step execution error',
         });
         const isNonRetryable = isNonRetryableStepFailure(e);
-        throw new Error(errorInstance.message, {
+        const wrapped = new ErrorType(errorInstance.message, {
           cause: {
             status: 'failed',
             error: errorInstance,
@@ -235,6 +269,21 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
             ...(isNonRetryable && { nonRetryable: true as const }),
           },
         });
+        // Report the original failure site to Inngest instead of this wrapper frame.
+        if (errorInstance.stack) {
+          wrapped.stack = errorInstance.stack;
+        }
+        // Inngest derives the reported `name` from the prototype, so keep built-in error types (e.g. TypeError).
+        const builtinErrorType =
+          e instanceof Error
+            ? BUILTIN_ERROR_TYPES.find(BuiltinType => Object.getPrototypeOf(e) === BuiltinType.prototype)
+            : undefined;
+        // A NonRetriableError keeps its own `name`, which Inngest also checks, so it stays non-retriable.
+        // Newer SDKs report that `name` instead of the prototype's; the stack still shows the original type.
+        if (builtinErrorType) {
+          Object.setPrototypeOf(wrapped, builtinErrorType.prototype);
+        }
+        throw wrapped;
       }
     });
     return result as T;
@@ -298,7 +347,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
     parentSpan: any;
     stepId: string;
     operationId: string;
-    options: {
+    options: SpanOutcomeFields & {
       name: string;
       type: any;
       input?: unknown;
@@ -315,6 +364,9 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
     // otherwise fall back to workflow span
     const parentSpanId = parentSpan?.id ?? executionContext.tracingIds?.workflowSpanId;
 
+    // Without observability there is no span to memoize; skip the durable operation.
+    if (!this.mastra?.observability?.getSelectedInstance({})) return undefined;
+
     // Use wrapDurableOperation to memoize span creation
     const exportedSpan = await this.wrapDurableOperation(operationId, async () => {
       const observability = this.mastra?.observability?.getSelectedInstance({});
@@ -324,12 +376,12 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
       const span = observability.startSpan({
         ...options,
         entityType: options.entityType as EntityType | undefined,
-        traceId: executionContext.tracingIds?.traceId,
+        traceId: parentSpan?.traceId ?? executionContext.tracingIds?.traceId,
         parentSpanId,
       });
 
       // Return serializable form
-      return span?.exportSpan();
+      return span?.snapshot?.() ?? span?.exportSpan();
     });
 
     // Return a rebuilt span that can have .end()/.error() called later
@@ -347,7 +399,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
   async endStepSpan(params: {
     span: any;
     operationId: string;
-    endOptions: {
+    endOptions: SpanOutcomeFields & {
       output?: unknown;
       attributes?: Record<string, unknown>;
     };
@@ -366,7 +418,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
   async errorStepSpan(params: {
     span: any;
     operationId: string;
-    errorOptions: {
+    errorOptions: SpanOutcomeFields & {
       error: Error;
       attributes?: Record<string, unknown>;
     };
@@ -386,7 +438,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
   async createChildSpan(params: {
     parentSpan: any;
     operationId: string;
-    options: {
+    options: SpanOutcomeFields & {
       name: string;
       type: any;
       input?: unknown;
@@ -399,6 +451,9 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
     // Use the actual parent span's ID if provided, otherwise fall back to workflow span
     const parentSpanId = parentSpan?.id ?? executionContext.tracingIds?.workflowSpanId;
 
+    // Without observability there is no span to memoize; skip the durable operation.
+    if (!this.mastra?.observability?.getSelectedInstance({})) return undefined;
+
     // Use wrapDurableOperation to memoize span creation
     const exportedSpan = await this.wrapDurableOperation(operationId, async () => {
       const observability = this.mastra?.observability?.getSelectedInstance({});
@@ -407,13 +462,13 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
       // Create span using tracingIds for traceId, and actual parent span for parentSpanId
       const span = observability.startSpan({
         ...options,
-        traceId: executionContext.tracingIds?.traceId,
+        traceId: parentSpan?.traceId ?? executionContext.tracingIds?.traceId,
         parentSpanId,
         tracingPolicy: this.options?.tracingPolicy,
       });
 
       // Return serializable form
-      return span?.exportSpan();
+      return span?.snapshot?.() ?? span?.exportSpan();
     });
 
     // Return a rebuilt span that can have .end()/.error() called later
@@ -431,7 +486,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
   async endChildSpan(params: {
     span: any;
     operationId: string;
-    endOptions?: {
+    endOptions?: SpanOutcomeFields & {
       output?: unknown;
       attributes?: Record<string, unknown>;
     };
@@ -450,7 +505,7 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
   async errorChildSpan(params: {
     span: any;
     operationId: string;
-    errorOptions: {
+    errorOptions: SpanOutcomeFields & {
       error: Error;
       attributes?: Record<string, unknown>;
     };
@@ -674,7 +729,10 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
       // Try to extract runId from error cause or generate new one
       if (errorCause && typeof errorCause === 'object' && 'status' in errorCause && errorCause.status === 'failed') {
         result = errorCause as Extract<NestedWorkflowResult, { status: 'failed' }>;
-        runId = 'runId' in errorCause && typeof errorCause.runId === 'string' ? errorCause.runId : randomUUID();
+        runId =
+          'runId' in errorCause && typeof errorCause.runId === 'string'
+            ? errorCause.runId
+            : globalThis.crypto.randomUUID();
       } else {
         // Log before flattening: Error objects don't survive snapshot
         // serialization (JSON.stringify(new Error('x')) is `{}`), so without
@@ -682,11 +740,13 @@ export class InngestExecutionEngine extends DefaultExecutionEngine {
         this.logger?.error(
           `Nested workflow step ${step.id} failed: ` + (e instanceof Error ? (e.stack ?? e.message) : String(e)),
         );
-        // Fallback: if we can't get the result from error, construct a basic failed result
-        runId = randomUUID();
+        // Fallback: if we can't get the result from error, construct a basic failed result.
+        // The error is returned from the memoized step.run() below, so it must serialize
+        // with its message (a raw StepError would keep only `stepId` and `name`).
+        runId = globalThis.crypto.randomUUID();
         result = {
           status: 'failed',
-          error: e instanceof Error ? e : new Error(String(e)),
+          error: getErrorFromUnknown(e, { serializeStack: true, fallbackMessage: 'Nested workflow failed' }),
         };
       }
     }

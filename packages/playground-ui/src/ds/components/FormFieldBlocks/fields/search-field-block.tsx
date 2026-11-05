@@ -1,5 +1,6 @@
 import { SearchIcon, XIcon } from 'lucide-react';
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import { Button } from '../../Button';
 import { Input } from '../../Input';
 import type { InputProps } from '../../Input';
@@ -31,6 +32,7 @@ export type SearchFieldBlockProps = {
   inputRef?: RefObject<HTMLInputElement | null>;
 };
 
+/** @deprecated Use `SearchInput`. */
 export function SearchFieldBlock({
   name,
   helpText,
@@ -68,7 +70,7 @@ export function SearchFieldBlock({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            size={size || 'sm'}
+            size={`icon-${size || 'sm'}`}
             aria-label={label || 'Search'}
             disabled={disabled}
             onClick={() => onMinimizedChange?.(false)}
@@ -114,18 +116,12 @@ export function SearchFieldBlock({
               size={size}
               error={error || Boolean(errorMsg)}
               aria-describedby={errorMsg ? fieldErrorId(name) : undefined}
-              className={cn(
-                size === 'xs' && 'px-7',
-                size === 'sm' && 'px-8',
-                (!size || size === 'md') && 'px-9',
-                size === 'lg' && 'px-10',
-              )}
+              className={cn(size === 'sm' && 'px-8', (!size || size === 'md') && 'px-9', size === 'lg' && 'px-10')}
             />
             <SearchIcon
               aria-hidden="true"
               className={cn(
                 'absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground',
-                size === 'xs' && 'size-3',
                 size === 'sm' && 'size-3.5',
                 (!size || size === 'md') && 'size-4',
                 size === 'lg' && 'size-[1.125rem]',
@@ -134,7 +130,7 @@ export function SearchFieldBlock({
             {onReset && (value || isMinimized === false) && (
               <Button
                 variant="ghost"
-                size={size || 'md'}
+                size={`icon-${size || 'md'}`}
                 aria-label="Clear search"
                 onClick={() => {
                   if (value) {

@@ -24,7 +24,7 @@ const AREA_IMPORTS = {
   'settings-upgrade': ['@mastra/core'],
   evaluations: ['@mastra/evals'],
   postgres: ['@mastra/pg'],
-  'public-oss-apis': ['@mastra/core/auth', '@mastra/server'],
+  'public-oss-apis': ['@mastra/core/auth', '@mastra/server/handlers'],
 };
 
 function argument(name) {

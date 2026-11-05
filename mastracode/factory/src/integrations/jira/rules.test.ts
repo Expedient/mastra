@@ -31,6 +31,7 @@ async function setup(overrides?: JiraRuleOverrides, boards = createBoardRegistry
     userId: 'user-1',
     input: { name: 'acme/repo' },
   });
+  const other = await seeded.projects.create({ orgId: 'org-1', userId: 'user-1', input: { name: 'acme/other' } });
   const service = new JiraRules({
     projects: seeded.projects,
     storage: seeded.workItems,
@@ -38,18 +39,18 @@ async function setup(overrides?: JiraRuleOverrides, boards = createBoardRegistry
     boards,
     jiraRules: resolveJiraRules(overrides),
   });
-  return { project, service, workItems: seeded.workItems };
+  return { project, other, service, workItems: seeded.workItems };
 }
 
 describe('JiraRules', () => {
   it.each([
     { name: 'the bound custom board initial phase', sourceId: '10001', board: 'release', stage: 'queued' },
-    { name: 'Work triage when the source is unbound', sourceId: '10002', board: 'work', stage: 'triage' },
+    { name: 'Work Intake when the source is unbound', sourceId: '10002', board: 'work', stage: 'intake' },
     {
-      name: 'Work triage when the bound board is not installed',
+      name: 'Work Intake when the bound board is not installed',
       sourceId: '10003',
       board: 'work',
-      stage: 'triage',
+      stage: 'intake',
     },
   ])('routes an observed issue to $name', async ({ sourceId, board, stage }) => {
     const { project, service, workItems } = await setup(
@@ -100,11 +101,11 @@ describe('JiraRules', () => {
   });
 
   it('does not mint a second card while another Factory holds a live card for the issue', async () => {
-    const { project, service, workItems } = await setup();
+    const { project, other, service, workItems } = await setup();
     await workItems.upsert({
       orgId: 'org-1',
       userId: 'user-1',
-      factoryProjectId: 'other-factory',
+      factoryProjectId: other.id,
       input: {
         externalSource: {
           integrationId: 'jira',
@@ -128,11 +129,11 @@ describe('JiraRules', () => {
   });
 
   it('ingests an issue again once the other Factory finished its card', async () => {
-    const { project, service, workItems } = await setup();
+    const { project, other, service, workItems } = await setup();
     await workItems.upsert({
       orgId: 'org-1',
       userId: 'user-1',
-      factoryProjectId: 'other-factory',
+      factoryProjectId: other.id,
       input: {
         externalSource: {
           integrationId: 'jira',
@@ -163,11 +164,11 @@ describe('JiraRules', () => {
   });
 
   it('finds the held card by claim key when the stored source key drifted', async () => {
-    const { project, service, workItems } = await setup();
+    const { project, other, service, workItems } = await setup();
     await workItems.upsert({
       orgId: 'org-1',
       userId: 'user-1',
-      factoryProjectId: 'other-factory',
+      factoryProjectId: other.id,
       input: {
         externalSource: { integrationId: 'jira', type: 'issue', externalId: 'jira-issue:old-ref', url: issue.url },
         claimKey: jiraClaimKey(issue.id),

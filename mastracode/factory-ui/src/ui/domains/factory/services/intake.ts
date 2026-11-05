@@ -11,28 +11,35 @@ export interface IntakeSelection {
   enabled: boolean;
   /** Source ids to sync; `null` = nothing selected. */
   sourceIds: string[] | null;
+  repositoryByLinearProject?: Record<string, string>;
 }
 
-export interface IntakeConfig {
+/** Built-in providers always present, plus any custom integration ids the server returns. */
+export type IntakeConfig = Record<string, IntakeSelection> & {
   github: IntakeSelection;
+  gitlab: IntakeSelection;
   linear: IntakeSelection;
   jira: IntakeSelection;
   incidentio: IntakeSelection;
-}
+};
 
 /**
  * The server keeps intake config as a dynamic map keyed by integration id and
  * only returns the integrations registered in the running deployment, so a key
  * is absent whenever that integration isn't connected. Fill the fixed shape the
  * UI relies on so reads like `config.github.enabled` never touch `undefined`.
- * GitHub defaults to enabled (issues sync once a repo is picked); Linear,
- * Jira, and incident.io stay off until they're set up and a source is selected.
- * Saving the fixed shape back is safe on servers without those integrations — the server
- * ignores disabled/unselected keys for unregistered integrations.
+ * An absent key means the integration is not registered in this deployment,
+ * so every synthetic placeholder stays disabled. Registered integrations are
+ * returned by the server with their effective defaults, and saving the fixed
+ * shape back is safe because the server ignores disabled/unselected keys for
+ * unregistered integrations. Other keys (custom integrations) pass through so
+ * every save sends them back unchanged.
  */
 function normalizeIntakeConfig(raw: Partial<Record<string, IntakeSelection>> | null | undefined): IntakeConfig {
   return {
-    github: raw?.github ?? { enabled: true, sourceIds: null },
+    ...raw,
+    github: raw?.github ?? { enabled: false, sourceIds: null },
+    gitlab: raw?.gitlab ?? { enabled: false, sourceIds: null },
     linear: raw?.linear ?? { enabled: false, sourceIds: null },
     jira: raw?.jira ?? { enabled: false, sourceIds: null },
     incidentio: raw?.incidentio ?? { enabled: false, sourceIds: null },
@@ -84,24 +91,51 @@ export interface IntakeSourceBinding {
   factoryProjectId: string;
   /** Installed board the source feeds; `null` keeps the built-in routing (issues → Work, PRs → Review). */
   board: string | null;
+  /**
+   * Jira only: labels whose issues this factory takes; `null` takes every issue no other factory's
+   * labels claim. Absent from servers that predate label filters, which means `null`.
+   */
+  labels?: string[] | null;
+  /** ISO timestamp; when two label filters match one issue, the older binding takes it. */
+  createdAt?: string;
 }
 
-async function requestIntakeBindings(baseUrl: string, init?: RequestInit): Promise<IntakeSourceBinding[]> {
-  const res = await fetch(`${baseUrl}/web/intake/bindings`, {
+/** Another factory's binding that already takes some of the requested issues. */
+export interface IntakeBindingConflict {
+  factoryProjectId: string;
+  /** Overlapping labels, or `null` when both bindings would take all issues. */
+  labels: string[] | null;
+}
+
+/** The server refused a binding because another factory already takes some of the same issues. */
+export class IntakeBindingConflictError extends Error {
+  readonly conflicts: IntakeBindingConflict[];
+
+  constructor(message: string, conflicts: IntakeBindingConflict[]) {
+    super(message);
+    this.name = 'IntakeBindingConflictError';
+    this.conflicts = conflicts;
+  }
+}
+
+async function requestIntakeBindings(baseUrl: string, init?: RequestInit, query = ''): Promise<IntakeSourceBinding[]> {
+  const res = await fetch(`${baseUrl}/web/intake/bindings${query}`, {
     headers: { Accept: 'application/json', ...(init?.body ? { 'content-type': 'application/json' } : {}) },
     credentials: 'include',
     ...init,
   });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
+    let conflicts: IntakeBindingConflict[] | undefined;
     try {
-      const body = (await res.json()) as { error?: string; message?: string };
+      const body = (await res.json()) as { error?: string; message?: string; conflicts?: IntakeBindingConflict[] };
       if (body.message) message = body.message;
       else if (body.error) message = body.error;
+      if (body.error === 'binding_conflict') conflicts = body.conflicts ?? [];
     } catch {
       /* ignore non-JSON */
     }
-    throw new Error(message);
+    throw conflicts ? new IntakeBindingConflictError(message, conflicts) : new Error(message);
   }
   const { bindings } = (await res.json()) as { bindings?: IntakeSourceBinding[] };
   return bindings ?? [];
@@ -159,10 +193,29 @@ export async function saveIntakeLabelRoute(
   return requestIntakeLabelRoutes(baseUrl, '', { method: 'PUT', body: JSON.stringify(route) });
 }
 
-/** Route one source to a Factory project, or clear it with `factoryProjectId: null`. */
+/**
+ * Route one source to a Factory project, or clear it with `factoryProjectId: null`. Jira sources
+ * can feed several factories, each with its own `labels` filter (omitted keeps the current one);
+ * remove a Jira binding with {@link deleteIntakeBinding}. Rejects with
+ * {@link IntakeBindingConflictError} when another factory already takes the same issues.
+ */
 export async function saveIntakeBinding(
   baseUrl: string,
-  binding: { integrationId: string; sourceId: string; factoryProjectId: string | null; board?: string | null },
+  binding: {
+    integrationId: string;
+    sourceId: string;
+    factoryProjectId: string | null;
+    board?: string | null;
+    labels?: string[] | null;
+  },
 ): Promise<IntakeSourceBinding[]> {
   return requestIntakeBindings(baseUrl, { method: 'PUT', body: JSON.stringify(binding) });
+}
+
+/** Remove one factory's binding of a source, leaving other factories' bindings of it in place. */
+export async function deleteIntakeBinding(
+  baseUrl: string,
+  binding: { integrationId: string; sourceId: string; factoryProjectId: string },
+): Promise<IntakeSourceBinding[]> {
+  return requestIntakeBindings(baseUrl, { method: 'DELETE' }, `?${new URLSearchParams(binding)}`);
 }

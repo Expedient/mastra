@@ -1,7 +1,7 @@
 import { Mastra } from '@mastra/core';
 import { Agent } from '@mastra/core/agent';
 import { RequestContext } from '@mastra/core/request-context';
-import { Workspace } from '@mastra/core/workspace';
+import { Workspace, CompositeFilesystem } from '@mastra/core/workspace';
 import type { WorkspaceFilesystem, FileEntry, FileStat } from '@mastra/core/workspace';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 
@@ -341,6 +341,32 @@ describe('Workspace Handlers', () => {
       expect(result.workspaces[0].capabilities.hasSkills).toBe(true);
     });
 
+    it('reports resolver-backed capabilities without resolving providers', async () => {
+      const filesystemResolver = vi.fn(() => createMockFilesystem());
+      const sandboxResolver = vi.fn(() => undefined);
+      const workspace = new Workspace({
+        id: 'lazy-ws',
+        name: 'Lazy Workspace',
+        filesystem: filesystemResolver,
+        sandbox: sandboxResolver,
+      });
+      await workspace.init();
+      const mastra = createMastra(workspace);
+
+      const result = await LIST_WORKSPACES_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+      });
+
+      expect(result.workspaces).toHaveLength(1);
+      expect(result.workspaces[0].capabilities).toMatchObject({
+        hasFilesystem: true,
+        hasDynamicFilesystem: true,
+        hasSandbox: true,
+      });
+      expect(filesystemResolver).not.toHaveBeenCalled();
+      expect(sandboxResolver).not.toHaveBeenCalled();
+    });
+
     it('should mark agent workspaces with source agent and populate agentId/agentName', async () => {
       const globalWorkspace = createWorkspace('global-ws', { name: 'Global Workspace' });
       const agentWorkspace = createWorkspace('agent-ws', { name: 'Agent Workspace' });
@@ -430,6 +456,56 @@ describe('Workspace Handlers', () => {
       expect(result).toEqual({ isWorkspaceConfigured: false });
     });
 
+    it('reports resolver-backed capabilities without resolving providers', async () => {
+      const filesystemResolver = vi.fn(() => createMockFilesystem());
+      const sandboxResolver = vi.fn(() => undefined);
+      const workspace = new Workspace({
+        id: 'lazy-ws',
+        filesystem: filesystemResolver,
+        sandbox: sandboxResolver,
+      });
+      const mastra = createMastra(workspace);
+
+      const result = await GET_WORKSPACE_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'lazy-ws',
+      });
+
+      expect(result.capabilities).toMatchObject({ hasFilesystem: true, hasDynamicFilesystem: true, hasSandbox: true });
+      expect(filesystemResolver).not.toHaveBeenCalled();
+      expect(sandboxResolver).not.toHaveBeenCalled();
+    });
+
+    it('reports a static filesystem as browsable', async () => {
+      const mastra = createMastra(new Workspace({ id: 'static-ws', filesystem: createMockFilesystem() }));
+
+      const result = await GET_WORKSPACE_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'static-ws',
+      });
+
+      expect(result.capabilities).toMatchObject({ hasFilesystem: true, hasDynamicFilesystem: false });
+    });
+
+    it('shows a mount display name instead of its provider class name', async () => {
+      const neonMount = createMockFilesystem();
+      Object.assign(neonMount, { displayName: 'Neon Object Storage', icon: 'neon' });
+      const workspace = new Workspace({
+        id: 'neon-workspace',
+        filesystem: new CompositeFilesystem({ mounts: { '/files': neonMount } }),
+      });
+      const mastra = createMastra(workspace);
+
+      const result = await GET_WORKSPACE_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'neon-workspace',
+      });
+
+      expect(result.mounts).toEqual([
+        expect.objectContaining({ path: '/files', displayName: 'Neon Object Storage', name: 'MockFilesystem' }),
+      ]);
+    });
+
     it('should return workspace info with capabilities', async () => {
       const workspace = createWorkspace('test-workspace', { name: 'Test Workspace', bm25: true });
       const mastra = createMastra(workspace);
@@ -446,6 +522,7 @@ describe('Workspace Handlers', () => {
         status: 'pending', // Workspace starts as pending until init() is called
         capabilities: {
           hasFilesystem: true,
+          hasDynamicFilesystem: false,
           hasSandbox: false,
           canBM25: true,
           canVector: false,
@@ -795,6 +872,118 @@ describe('Workspace Handlers', () => {
       });
 
       expect(result.path).toBe('/test.txt');
+      expect(result.type).toBe('file');
+    });
+  });
+
+  // ===========================================================================
+  // Regression: %-containing filenames (issue #24620)
+  //
+  // Handlers must NOT decode the incoming path again — framework adapters
+  // already deliver decoded values. Double-decoding made `a%20b.txt` resolve
+  // to `a b.txt`, returning/deleting the wrong file.
+  // ===========================================================================
+  describe('Regression: %-containing paths are not double-decoded (issue #24620)', () => {
+    it('READ resolves the literal %-name, not its decoded form', async () => {
+      const files = new Map([
+        ['/a%20b.txt', 'percent-file'],
+        ['/a b.txt', 'space-file'],
+      ]);
+      const workspace = createWorkspace('test-workspace', { files });
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_READ_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/a%20b.txt',
+        encoding: 'utf-8',
+      });
+
+      expect(result.path).toBe('/a%20b.txt');
+      expect(result.content).toBe('percent-file');
+    });
+
+    it('DELETE removes the literal %-name and leaves the decoded-form file intact', async () => {
+      const files = new Map([
+        ['/a%20b.txt', 'percent-file'],
+        ['/a b.txt', 'space-file'],
+      ]);
+      const workspace = createWorkspace('test-workspace', { files });
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_DELETE_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/a%20b.txt',
+      });
+
+      expect(result.success).toBe(true);
+      expect(workspace.filesystem!.deleteFile).toHaveBeenCalledWith('/a%20b.txt', expect.anything());
+      // The wrong file must NOT be touched.
+      expect(files.has('/a%20b.txt')).toBe(false);
+      expect(files.has('/a b.txt')).toBe(true);
+    });
+
+    it('READ passes a trailing-% name through unchanged (previously threw)', async () => {
+      const files = new Map([['/100%.txt', 'done']]);
+      const workspace = createWorkspace('test-workspace', { files });
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_READ_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/100%.txt',
+        encoding: 'utf-8',
+      });
+
+      expect(result.path).toBe('/100%.txt');
+      expect(result.content).toBe('done');
+    });
+
+    it('WRITE uses the JSON body path verbatim', async () => {
+      const files = new Map<string, string>();
+      const workspace = createWorkspace('test-workspace', { files });
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_WRITE_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/100%.txt',
+        content: 'body',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.path).toBe('/100%.txt');
+      expect(files.get('/100%.txt')).toBe('body');
+    });
+
+    it('MKDIR uses the JSON body path verbatim', async () => {
+      const workspace = createWorkspace('test-workspace');
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_MKDIR_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/100%dir',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.path).toBe('/100%dir');
+      expect(workspace.filesystem!.mkdir).toHaveBeenCalledWith('/100%dir', { recursive: true });
+    });
+
+    it('STAT resolves the literal %-name', async () => {
+      const files = new Map([['/file%20name.txt', 'content']]);
+      const workspace = createWorkspace('test-workspace', { files });
+      const mastra = createMastra(workspace);
+
+      const result = await WORKSPACE_FS_STAT_ROUTE.handler({
+        ...createTestServerContext({ mastra }),
+        workspaceId: 'test-workspace',
+        path: '/file%20name.txt',
+      });
+
+      expect(result.path).toBe('/file%20name.txt');
       expect(result.type).toBe('file');
     });
   });

@@ -17,7 +17,7 @@ const MAX_MESSAGE_LENGTH = 8_192;
 const MAX_ARGUMENTS_LENGTH = 4_096;
 export const MAX_ROLE_LENGTH = 32;
 export const MAX_TOOL_NAME_LENGTH = 128;
-const MAX_SKILL_NAME_LENGTH = 128;
+export const MAX_SKILL_NAME_LENGTH = 128;
 const MAX_SOURCE_KEY_LENGTH = 256;
 const MAX_URL_LENGTH = 2_048;
 const MAX_METADATA_JSON_LENGTH = 16_384;
@@ -27,11 +27,13 @@ const MAX_JSON_COLLECTION_SIZE = 100;
 export const MAX_BOARD_IDENTIFIER_LENGTH = 128;
 export const IDENTIFIER_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 export const BOARD_IDENTIFIER_RE = IDENTIFIER_RE;
-const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SENSITIVE_KEY_RE = /(?:authorization|cookie|credential|password|secret|token)/i;
 const WORK_ITEM_SOURCES: readonly WorkItemSource[] = [
   'github-issue',
   'github-pr',
+  'gitlab-issue',
+  'gitlab-pr',
   'linear-issue',
   'jira-issue',
   'incidentio-follow-up',
@@ -234,9 +236,24 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
     case 'upsertLinkedWorkItem': {
       assertExactKeys(
         value,
-        ['type', 'idempotencyKey', 'board', 'source', 'sourceKey', 'claimKey', 'title', 'url', 'stage', 'metadata'],
+        [
+          'type',
+          'idempotencyKey',
+          'board',
+          'source',
+          'sourceKey',
+          'claimKey',
+          'title',
+          'url',
+          'stage',
+          'skipRules',
+          'metadata',
+        ],
         'Factory linked work item decision',
       );
+      if (value.skipRules !== undefined && typeof value.skipRules !== 'boolean') {
+        throw new FactoryRuleValidationError('Factory linked work item skipRules must be a boolean.');
+      }
       const claimKey = optionalBoundedString(
         value.claimKey,
         'Factory linked work item claimKey',
@@ -257,6 +274,7 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
         title: boundedString(value.title, 'Factory linked work item title', MAX_TITLE_LENGTH),
         url,
         stage: boardIdentifier(value.stage, 'Factory linked work item stage'),
+        ...(value.skipRules === true ? { skipRules: true } : {}),
         ...(metadata ? { metadata } : {}),
       };
     }
@@ -272,6 +290,7 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
           'arguments',
           'precedingMessage',
           'cancelInFlight',
+          'startsAfterOwnMove',
           'resume',
         ],
         'Factory invoke skill decision',
@@ -290,6 +309,9 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
       );
       if (value.cancelInFlight !== undefined && typeof value.cancelInFlight !== 'boolean') {
         throw new FactoryRuleValidationError('Factory skill cancelInFlight must be a boolean.');
+      }
+      if (value.startsAfterOwnMove !== undefined && typeof value.startsAfterOwnMove !== 'boolean') {
+        throw new FactoryRuleValidationError('Factory skill startsAfterOwnMove must be a boolean.');
       }
       if (value.resume !== undefined && typeof value.resume !== 'boolean') {
         throw new FactoryRuleValidationError('Factory skill resume must be a boolean.');
@@ -312,6 +334,7 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
         ...(args ? { arguments: args } : {}),
         ...(precedingMessage ? { precedingMessage } : {}),
         ...(value.cancelInFlight === true ? { cancelInFlight: true } : {}),
+        ...(value.startsAfterOwnMove === true ? { startsAfterOwnMove: true } : {}),
       };
     }
     case 'sendMessage': {
@@ -361,6 +384,35 @@ export function validateFactoryRuleDecision(value: unknown, causalDepth = 0): Fa
         title: boundedString(value.title, 'Factory notification title', MAX_TITLE_LENGTH),
         ...(body ? { body } : {}),
         ...(level ? { level } : {}),
+      };
+    }
+    case 'dismissStaleReviews': {
+      assertExactKeys(
+        value,
+        [
+          'type',
+          'idempotencyKey',
+          'installationId',
+          'repository',
+          'pullRequestNumber',
+          'approvingReviewId',
+          'approvingAuthor',
+        ],
+        'Factory dismiss stale reviews decision',
+      );
+      for (const key of ['installationId', 'pullRequestNumber'] as const) {
+        if (!Number.isSafeInteger(value[key]) || (value[key] as number) <= 0) {
+          throw new FactoryRuleValidationError(`Factory dismiss stale reviews ${key} must be a positive integer.`);
+        }
+      }
+      return {
+        type,
+        ...commonCommitFields(value),
+        installationId: value.installationId as number,
+        repository: boundedString(value.repository, 'Factory dismiss stale reviews repository', MAX_TITLE_LENGTH),
+        pullRequestNumber: value.pullRequestNumber as number,
+        approvingReviewId: boundedString(value.approvingReviewId, 'Factory approving review id', MAX_TITLE_LENGTH),
+        approvingAuthor: boundedString(value.approvingAuthor, 'Factory approving review author', MAX_TITLE_LENGTH),
       };
     }
     default:

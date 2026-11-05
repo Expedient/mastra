@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { boardCardState } from './boardCardState';
 import { cardActions, cardMoves, cardPrimaryAction, resumeStage } from './cardPrimaryAction';
 import type { CardAction, CardMove } from './cardPrimaryAction';
 import type { WorkItem, WorkItemSessionRef } from './services/workItems';
@@ -70,6 +71,9 @@ describe('cardMoves', () => {
     const pullRequest = { source: 'github-pr' as const, metadata: { state: 'open' }, stages: ['done'] };
     expect(cardMoves(pullRequest, 'done')).toEqual([{ label: 'Re-review', role: 'review', stage: 'review' }]);
     expect(cardMoves(pullRequest, 'review')).toEqual([review]);
+    const mergeRequest = { ...pullRequest, source: 'gitlab-pr' as const };
+    expect(cardMoves(mergeRequest, 'done')).toEqual([{ label: 'Re-review', role: 'review', stage: 'review' }]);
+    expect(cardMoves(mergeRequest, 'review')).toEqual([review]);
   });
 
   it('offers a Work card in Review no lane, so its session is the action', () => {
@@ -89,14 +93,29 @@ describe('cardMoves', () => {
 });
 
 describe('resumeStage', () => {
-  it('re-enters the lane of the deepest seat a card parked in Intake has used', () => {
-    expect(resumeStage('intake', { triage: sessionRef('triage'), plan: sessionRef('plan') })).toBe('planning');
-    expect(resumeStage('intake', { plan: sessionRef('plan'), work: sessionRef('work') })).toBe('execute');
+  const history = (...stages: string[]) => stages.map(stage => ({ stage }));
+
+  it('re-enters the deepest working lane a card parked in Intake has been in', () => {
+    // Planning and Building share the `work` session, so the lane comes from the stage history.
+    expect(
+      resumeStage('intake', {
+        sessions: { triage: sessionRef('triage'), work: sessionRef('work') },
+        stageHistory: history('intake', 'triage', 'planning', 'intake'),
+      }),
+    ).toBe('planning');
+    expect(
+      resumeStage('intake', {
+        sessions: { work: sessionRef('work') },
+        stageHistory: history('triage', 'planning', 'execute', 'intake'),
+      }),
+    ).toBe('execute');
   });
 
   it('offers nothing for a fresh arrival or outside Intake', () => {
-    expect(resumeStage('intake', {})).toBeUndefined();
-    expect(resumeStage('done', { review: sessionRef('review') })).toBeUndefined();
+    expect(resumeStage('intake', { sessions: {}, stageHistory: history('triage', 'intake') })).toBeUndefined();
+    expect(
+      resumeStage('done', { sessions: { review: sessionRef('review') }, stageHistory: history('review', 'done') }),
+    ).toBeUndefined();
   });
 });
 
@@ -229,23 +248,48 @@ describe('cardActions', () => {
   const run = { label: 'Investigate', start: vi.fn() };
 
   it('leads with the likeliest click and offers a rival run only beside an idle session', () => {
-    const idle = { running: false, waiting: false };
+    const idle = { state: boardCardState({}) };
+    const running = { state: boardCardState({ sessionStatus: 'working' }) };
     const labels = (actions: CardAction[]) => actions.map(action => action.label);
     expect(labels(cardActions({ ...idle, session, run }))).toEqual(['Investigate', 'Open session']);
     expect(labels(cardActions({ ...idle, session, retry, run }))).toEqual(['Retry', 'Open session', 'Investigate']);
-    expect(labels(cardActions({ ...idle, running: true, session, run }))).toEqual(['Open session']);
-    expect(labels(cardActions({ ...idle, running: true, waiting: true, session, run }))).toEqual(['Open session']);
-    expect(labels(cardActions({ ...idle, running: true, session, retry, run }))).toEqual(['Open session']);
-    expect(labels(cardActions({ ...idle, running: true, retry }))).toEqual([]);
+    expect(labels(cardActions({ ...running, session, run }))).toEqual(['Open session']);
+    expect(labels(cardActions({ ...running, session, retry, run }))).toEqual(['Open session']);
+    expect(labels(cardActions({ ...running, retry }))).toEqual([]);
+    expect(labels(cardActions({ state: boardCardState({ sessionStatus: 'ready' }), session, run }))).toEqual([
+      'Open session',
+    ]);
     expect(cardActions(idle)).toEqual([]);
   });
 
   it('lights only the click the card waits on a person for', () => {
-    const idle = { running: false, waiting: false };
+    const idle = { state: boardCardState({}) };
+    const running = { state: boardCardState({ sessionStatus: 'working' }) };
     const lit = (actions: CardAction[]) => actions.filter(action => action.urgent).map(action => action.label);
     expect(lit(cardActions({ ...idle, session, run }))).toEqual([]);
     expect(lit(cardActions({ ...idle, session, retry, run }))).toEqual(['Retry']);
-    expect(lit(cardActions({ ...idle, running: true, waiting: true, session, run }))).toEqual([]);
-    expect(lit(cardActions({ ...idle, running: true, session, retry, run }))).toEqual([]);
+    expect(lit(cardActions({ ...running, session, run }))).toEqual([]);
+    expect(lit(cardActions({ ...running, session, retry, run }))).toEqual([]);
+    expect(lit(cardActions({ state: boardCardState({ heldAs: 'feature request' }), session, run }))).toEqual([
+      'Investigate',
+    ]);
+  });
+
+  it('replaces the run with a disabled progress action until there is a session to open', () => {
+    const state = boardCardState({ moving: { stage: 'review', label: 'Reviewing' } });
+    expect(cardActions({ state, run: { ...run, ariaLabel: 'Start suggested run: Review' } })).toEqual([
+      { label: 'Moving…', start: run.start, disabled: true },
+    ]);
+    expect(cardActions({ state, session, run })).toEqual([session]);
+  });
+
+  it('names an available suggestion accessibly and clears that name while starting it', () => {
+    const proposal = { label: 'Review', decisionId: 'decision-1' };
+    expect(cardActions({ state: boardCardState({ proposal }), run })).toEqual([
+      expect.objectContaining({ ariaLabel: 'Start suggested run: Review', urgent: true }),
+    ]);
+    expect(cardActions({ state: boardCardState({ proposal, preparing: 'Starting…' }), run })).toEqual([
+      { label: 'Starting…', start: run.start, disabled: true },
+    ]);
   });
 });

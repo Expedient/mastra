@@ -172,16 +172,6 @@ const sidebars = {
             },
             {
               type: 'doc',
-              id: 'harness/signals',
-              label: 'Signals',
-            },
-            {
-              type: 'doc',
-              id: 'harness/signal-providers',
-              label: 'Signal Providers',
-            },
-            {
-              type: 'doc',
               id: 'harness/agent-controller',
               label: 'Agent Controller',
             },
@@ -256,6 +246,49 @@ const sidebars = {
         },
         {
           type: 'category',
+          label: 'Signals',
+          link: {
+            type: 'doc',
+            id: 'signals/overview',
+          },
+          customProps: {
+            contextualSidebar: true,
+          },
+          items: [
+            {
+              type: 'doc',
+              id: 'signals/thread-streams',
+              label: 'Thread streams',
+            },
+            {
+              type: 'doc',
+              id: 'signals/sending-signals',
+              label: 'Sending signals',
+            },
+            {
+              type: 'doc',
+              id: 'signals/state-signals',
+              label: 'State signals',
+            },
+            {
+              type: 'doc',
+              id: 'signals/notifications',
+              label: 'Notifications',
+            },
+            {
+              type: 'doc',
+              id: 'signals/signal-providers',
+              label: 'Signal providers',
+            },
+            {
+              type: 'doc',
+              id: 'signals/running-across-processes',
+              label: 'Running across processes',
+            },
+          ],
+        },
+        {
+          type: 'category',
           label: 'Sandboxes',
           link: {
             type: 'doc',
@@ -296,6 +329,11 @@ const sidebars = {
           type: 'doc',
           id: 'browser',
           label: 'Browser',
+        },
+        {
+          type: 'doc',
+          id: 'classifier',
+          label: 'Classifier',
         },
         {
           type: 'category',
@@ -640,37 +678,38 @@ const sidebars = {
           label: 'Guides',
           link: {
             type: 'doc',
-            id: 'guides/multi-agent-systems',
+            id: 'guides/overview',
           },
           collapsed: true,
           customProps: {
             contextualSidebar: true,
-            contextualSidebarLabel: 'Multi-agent systems',
+            contextualSidebarLabel: 'Guides',
           },
           items: [
             {
               type: 'doc',
+              id: 'guides/multi-agent-systems',
+              label: 'Multi-agent systems',
+            },
+            {
+              type: 'doc',
               id: 'guides/context-engineering',
               label: 'Context engineering',
-              customProps: {
-                tags: ['new'],
-              },
             },
             {
               type: 'doc',
               id: 'guides/agent-lifecycle',
               label: 'Agent lifecycle',
-              customProps: {
-                tags: ['new'],
-              },
             },
             {
               type: 'doc',
               id: 'guides/authentication-identity',
               label: 'Authentication',
-              customProps: {
-                tags: ['new'],
-              },
+            },
+            {
+              type: 'doc',
+              id: 'guides/mcp-authentication-authorization',
+              label: 'MCP authentication',
             },
             {
               type: 'doc',
@@ -681,9 +720,6 @@ const sidebars = {
               type: 'doc',
               id: 'guides/build-an-eval-loop',
               label: 'Build an eval loop',
-              customProps: {
-                tags: ['new'],
-              },
             },
           ],
         },
@@ -717,6 +753,36 @@ const sidebars = {
       label: 'Regions',
     },
     {
+      type: 'category',
+      label: 'Connect',
+      collapsed: true,
+      link: {
+        type: 'doc',
+        id: 'mastra-platform/connect/overview',
+      },
+      customProps: {
+        contextualSidebar: true,
+        tags: ['new'],
+      },
+      items: [
+        {
+          type: 'doc',
+          id: 'mastra-platform/connect/providers',
+          label: 'Providers',
+        },
+        {
+          type: 'doc',
+          id: 'mastra-platform/connect/tools',
+          label: 'Tools',
+        },
+        {
+          type: 'doc',
+          id: 'mastra-platform/connect/channels',
+          label: 'Channels',
+        },
+      ],
+    },
+    {
       type: 'doc',
       id: 'mastra-platform/observability',
       label: 'Observability',
@@ -725,9 +791,6 @@ const sidebars = {
       type: 'doc',
       id: 'mastra-platform/alerts',
       label: 'Alerts',
-      customProps: {
-        tags: ['new'],
-      },
     },
     {
       type: 'doc',

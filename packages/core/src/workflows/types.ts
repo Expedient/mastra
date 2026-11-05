@@ -7,7 +7,14 @@ import type { MastraScorers } from '../evals';
 import type { PubSub } from '../events/pubsub';
 import type { IMastraLogger } from '../logger';
 import type { Mastra } from '../mastra';
-import type { AnySpan, ObservabilityContext, TracingOptions, TracingPolicy, TracingProperties } from '../observability';
+import type {
+  AnySpan,
+  ObservabilityContext,
+  ResumeTracingContext,
+  TracingOptions,
+  TracingPolicy,
+  TracingProperties,
+} from '../observability';
 import type { RequestContext } from '../request-context';
 import type { InferPublicSchema, PublicSchema, StandardSchemaWithJSON, InferStandardSchemaOutput } from '../schema';
 import type { OutputSchema } from '../stream';
@@ -54,7 +61,9 @@ export type RestartExecutionParams = {
   stepResults: Record<string, StepResult<any, any, any, any>>;
   state?: Record<string, any>;
   stepExecutionPath?: string[];
+  isPreFirstStepRestart?: boolean;
   isParallelOrConditionalRestarted?: boolean;
+  isForeachRestarted?: boolean;
 };
 
 export type TimeTravelExecutionParams = {
@@ -328,11 +337,7 @@ export type WorkflowStateSingleStepResult = {
 
 export type WorkflowStateStepResult = WorkflowStateSingleStepResult | WorkflowStateSingleStepResult[];
 
-export type WorkflowStateTracingContext = {
-  traceId?: string;
-  spanId?: string;
-  parentSpanId?: string;
-};
+export type WorkflowStateTracingContext = ResumeTracingContext;
 
 /**
  * Unified workflow state that combines metadata with processed execution state.
@@ -394,6 +399,13 @@ export type WorkflowStateField =
   | 'requestContext'
   | 'tracingContext';
 
+export interface NestedWorkflowParent {
+  workflowId: string;
+  runId: string;
+  stepId: string;
+  foreachIndex?: number;
+}
+
 export interface WorkflowRunState {
   // Core state info
   runId: string;
@@ -410,6 +422,21 @@ export interface WorkflowRunState {
   resumeLabels: Record<string, WorkflowResumeLabel>;
   waitingPaths: Record<string, number[]>;
   timestamp: number;
+  /**
+   * Epoch ms when an agent resume claimed this suspended run (status `pending`). Lets a later
+   * resume recognize a claim abandoned by a process that died before starting the run.
+   * @internal
+   */
+  resumeClaimedAt?: number;
+  /**
+   * The `resumeClaimedAt` of an agent resume that started running while holding a run-ownership
+   * lease on its claim. Only such a `running` claim can be taken over once its lease lapses, so a
+   * resume started by a process that holds no lease is never taken over.
+   * @internal
+   */
+  resumeLeasedClaimAt?: number;
+  /** @internal Snapshot created only to guard evented step deliveries. */
+  guardedOnlySnapshot?: boolean;
   /** Tripwire data when status is 'tripwire' */
   tripwire?: StepTripwireInfo;
   stepExecutionPath?: string[];
@@ -419,6 +446,7 @@ export interface WorkflowRunState {
    * as children of the original suspended span.
    */
   tracingContext?: WorkflowStateTracingContext;
+  parentWorkflow?: NestedWorkflowParent;
 }
 
 /**
@@ -540,6 +568,14 @@ export interface WorkflowOptions {
    */
   autoRestartActiveRuns?: boolean;
   shouldPersistSnapshot?: ShouldPersistSnapshotFn;
+  /**
+   * Evaluates `shouldPersistSnapshot` before entering the durable operation so a
+   * false verdict does not consume a durable step.
+   *
+   * @internal Only enable this for framework-owned predicates that depend solely
+   * on serialized workflow state and are guaranteed deterministic across replay.
+   */
+  evaluatePersistencePredicateBeforeDurableOperation?: boolean;
 
   /**
    * Acknowledges that `resume()` calls for this workflow cannot be de-duplicated
@@ -550,6 +586,37 @@ export interface WorkflowOptions {
    * for reduced snapshot writes and serialize their own resumes.
    */
   allowUnclaimedResumes?: boolean;
+
+  /**
+   * Writes the resume claim (`suspended -> running`) even when `shouldPersistSnapshot`
+   * excludes `running`, so a resumed run stops reading back as `suspended` while it runs.
+   *
+   * @internal Set by durable agent loops, whose suspended-run listing reads the stored status.
+   */
+  persistResumeClaim?: boolean;
+
+  /**
+   * Identifies step errors raised because this execution lost, or could not
+   * confirm, ownership of the run — for example a durable agent run taken
+   * over by `recover()`. Another execution may be driving the run from its
+   * stored snapshot, so the evented engine fails such a run without any
+   * storage write: no step-result merge, no terminal `failed` update, and no
+   * snapshot cleanup.
+   *
+   * @internal Set by durable agent workflows.
+   */
+  isOwnershipLostError?: (error: unknown) => boolean;
+
+  /**
+   * Whether the serialized request context carried by a run event belongs to a
+   * different execution of the run than `requestContext` — for example one
+   * that lost the run to `recover()` but is still publishing. A caller waiting
+   * on the evented engine ignores such an execution's finish event and keeps
+   * waiting for its own.
+   *
+   * @internal Set by durable agent workflows.
+   */
+  isForeignExecution?: (eventRequestContext: unknown, requestContext: RequestContext) => boolean;
 
   /**
    * Transforms the run snapshot immediately before it is persisted.
@@ -653,10 +720,24 @@ export type StepFlowEntryOptions = {
  * (`any`) because the public type-safety for these entries is enforced by the
  * `Workflow` builder method overloads, not by this internal union.
  */
+export type SerializableClassifierStepOptions = {
+  maxRetries?: number;
+  providerOptions?: Record<string, Record<string, unknown>>;
+  retries?: number;
+  metadata?: StepMetadata;
+};
+
 export type SingleStepEntry<TEngineType = DefaultEngineType> =
   | { type: 'step'; step: Step }
   | { type: 'agent'; id: string; agentId: string; agent?: any; options?: any }
   | { type: 'tool'; id: string; toolId: string; tool?: any; options?: any }
+  | {
+      type: 'classifier';
+      id: string;
+      classifierId: string;
+      classifier?: any;
+      options?: SerializableClassifierStepOptions;
+    }
   | {
       type: 'mapping';
       id: string;
@@ -671,6 +752,8 @@ export type StepEntry = Extract<SingleStepEntry, { type: 'step' }>;
 export type AgentStepEntry = Extract<SingleStepEntry, { type: 'agent' }>;
 /** The `{ type: 'tool' }` variant of {@link SingleStepEntry}. */
 export type ToolStepEntry = Extract<SingleStepEntry, { type: 'tool' }>;
+/** The `{ type: 'classifier' }` variant of {@link SingleStepEntry}. */
+export type ClassifierStepEntry = Extract<SingleStepEntry, { type: 'classifier' }>;
 /** The `{ type: 'mapping' }` variant of {@link SingleStepEntry}. */
 export type MappingStepEntry<TEngineType = DefaultEngineType> = Extract<
   SingleStepEntry<TEngineType>,
@@ -823,6 +906,12 @@ export type SerializedSingleStepEntry =
       // looked up from the live Mastra instance at rehydration time.
       options?: SerializedStepOptions;
     }
+  | {
+      type: 'classifier';
+      id: string;
+      classifierId: string;
+      options?: SerializableClassifierStepOptions;
+    }
   | { type: 'mapping'; id: string; description?: string; metadata?: StepMetadata; mapConfig: string }
   /**
    * A nested workflow referenced by its registered id (code-defined or
@@ -963,7 +1052,7 @@ export type StepParams<
     TResumeSchema extends PublicSchema<any> ? InferPublicSchema<TResumeSchema> : unknown,
     TSuspendSchema extends PublicSchema<any> ? InferPublicSchema<TSuspendSchema> : unknown,
     DefaultEngineType,
-    TRequestContextSchema extends PublicSchema<any> ? InferPublicSchema<TRequestContextSchema> : unknown
+    InferWorkflowRequestContext<TRequestContextSchema>
   >;
 };
 
@@ -1174,9 +1263,10 @@ export type WorkflowConfig<
   /** Type of workflow - 'processor' for processor workflows, 'default' otherwise */
   type?: WorkflowType;
   /**
-   * Optional cron schedule configuration. When set, the Mastra scheduler will
-   * publish a `workflow.start` event on the cron schedule.
-   * Only supported on the evented engine.
+   * Optional cron schedule configuration. When set, the Mastra scheduler
+   * starts a run on the cron schedule. Supported on the default and evented
+   * engines; other engines (Inngest, Temporal) ignore it and use their own
+   * scheduling.
    *
    * Accepts either a single schedule object or an array of schedule objects.
    * Array entries must each specify a unique stable `id`. The `inputData`,
@@ -1192,6 +1282,26 @@ export type WorkflowConfig<
  * Returns `unknown` when no schema is provided.
  */
 export type InferSchemaOutput<T> = T extends PublicSchema<any> ? InferPublicSchema<T> : unknown;
+
+/**
+ * Infers the request context type for workflows and steps.
+ *
+ * Workflows validate request context without decoding it, so step code sees the raw input values.
+ * Unlike `InferPublicSchema`, this does not resolve a Standard Schema's optional `~standard.types`
+ * to its transformed output, which would type raw values as decoded ones.
+ */
+export type InferWorkflowRequestContext<T> =
+  T extends PublicSchema<any>
+    ? T extends { _output: infer Output }
+      ? Output
+      : T extends { _type: infer Output }
+        ? Output
+        : T extends { '~standard': { types: { output: infer Output } } }
+          ? Output
+          : T extends PublicSchema<infer Output>
+            ? Output
+            : never
+    : unknown;
 
 /**
  * Schema-typed variant of `WorkflowConfig` used by `createWorkflow` factories.
@@ -1227,7 +1337,7 @@ export type CreateWorkflowParams<
   schedule?: WorkflowScheduleInput<
     NoInfer<InferSchemaOutput<TInputSchema>>,
     NoInfer<InferSchemaOutput<TStateSchema>>,
-    NoInfer<InferSchemaOutput<TRequestContextSchema>>
+    NoInfer<InferWorkflowRequestContext<TRequestContextSchema>>
   >;
 };
 
@@ -1268,6 +1378,7 @@ export type SubsetOf<TStepState, TState> =
 export type ExecutionContext = {
   workflowId: string;
   runId: string;
+  parentWorkflow?: NestedWorkflowParent;
   executionPath: number[];
   stepExecutionPath?: string[];
   activeStepsPath: Record<string, number[]>;

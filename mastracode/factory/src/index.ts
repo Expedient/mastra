@@ -1,15 +1,23 @@
 export {
   BoardDefinitionError,
   createBoardRegistry,
+  DEFAULT_PHASE_CONTEXT,
   defaultBoards,
   defineBoard,
+  FACTORY_AGENT_ID,
   reviewBoard,
   workBoard,
 } from './boards/index.js';
 export type {
   BoardDefinition,
+  BoardEventIntegration,
+  BoardEventRules,
+  BoardPhase,
   BoardPhaseDefinition,
+  BoardPhaseExitTool,
+  BoardPhaseRunner,
   BoardRegistry,
+  BoardSourceClosed,
   BoardTransition,
   BoardTransitionPolicy,
   BoardTransitionPolicyContext,
@@ -18,8 +26,20 @@ export type {
   ReviewBoardPhase,
   WorkBoardPhase,
 } from './boards/index.js';
+export type { RuleCondition, RuleGroup, RuleOperator } from './rules/rule-group.js';
 export { MastraFactory } from './factory.js';
-export type { MastraArgs, MastraFactoryConfig, MastraFactorySandboxConfig, FactorySandboxStart } from './factory.js';
+export { waitForPendingFilesystemCapture } from './session/filesystem-capture.js';
+export type {
+  MastraArgs,
+  MastraFactoryConfig,
+  MastraFactorySandboxConfig,
+  MastraFactorySandboxOption,
+  FactorySandboxStart,
+} from './factory.js';
+export { LocalFactorySandbox, type LocalFactorySandboxOptions } from './sandbox/local-factory-sandbox.js';
+// The option type for `MastraFactoryConfig.github.rules`, so callers can
+// annotate a custom handler without importing the deep integration subpath.
+export type { GithubRuleOverrides } from './integrations/github/default-rules.js';
 export type { FactorySandboxContext, SessionSetupGate, SessionSetupRun } from './sandbox/session-sandbox.js';
 export { ChannelIdentityStorage } from './storage/domains/channel-identity/base.js';
 export type {

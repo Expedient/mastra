@@ -205,7 +205,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground-ui/package.json",
-          "sha256": "703fcda50f5734a71e134384e6ddd4b523beb0a2a5272e5d60e363ab111e325d"
+          "sha256": "5c5d43a34c660a467171d4e8d957a22936e1b7ae893f73b51238cf83cd388741"
         }
       ],
       "replacementRegressionCheck": "descendant and wildcard export scans reject restoration of @mastra/playground-ui/ee",
@@ -237,7 +237,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground-ui/vite.config.ts",
-          "sha256": "02da6291b7cde9ca0f451918084f59d31d074a74e39729b02e6276c7fc31afa5"
+          "sha256": "01ed456d1156329465e55642971bc9b95b2fb2d29ea53b2b1d4981efe521b51e"
         }
       ],
       "replacementRegressionCheck": "generated path and final-byte scans reject EE UI entries",
@@ -269,11 +269,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/playground/src/App.tsx",
-          "sha256": "9d92d5e5a01935bedd971889c4e880b49d6c4ab5fc44d53fee25693b466d199c"
+          "sha256": "c0a43ae128a0112f137b0c009805c4f69133d3c9e40af78e2b6d9d7567b7ba25"
         },
         {
           "path": "packages/playground/src/lib/nav/nav-items.tsx",
-          "sha256": "7972d83f5de59f61cd713c42984d248635426741462ee1b5fd17a5c1c81a4b3b"
+          "sha256": "7aa20ecb969553c95a0294e4d92bbd6f6bafaa59f42be9fc189b834e1e966f78"
         }
       ],
       "replacementRegressionCheck": "active import, alias, source-path, and Playground fixture scans reject retired Signals wiring",
@@ -305,7 +305,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/package.json",
-          "sha256": "53e30b052120482ffd93a0ca8e0ea75bad263a00c57871d1e974dde9aea1b985"
+          "sha256": "afe655b8a1db8c52343bfbf390e2bf1b443673aeb888c15c7eb8adee381a44c8"
         },
         {
           "path": "packages/core/src/editor/index.ts",
@@ -341,11 +341,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/tsdown.config.ts",
-          "sha256": "ecf50edfba04c8c053b5bb70053ff4722ed165c7a5bc61d316fc9be874dc5e68"
+          "sha256": "7d6f959c1fd1adec2080178ad52a67057c49be298685d316292611f174921a43"
         },
         {
           "path": "packages/core/src/editor/types.ts",
-          "sha256": "226462d74715e46f2934e8ccc0c4b22a847bb1cd80245f5a1fe6804785799a70"
+          "sha256": "c350d13f061dbe33babf01ac7d86375a691bf07581182b541b956fe8289dfbcf"
         }
       ],
       "replacementRegressionCheck": "build-entry path and packed bundle scans reject retired Agent Builder code",
@@ -377,7 +377,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/src/editor/types.ts",
-          "sha256": "226462d74715e46f2934e8ccc0c4b22a847bb1cd80245f5a1fe6804785799a70"
+          "sha256": "c350d13f061dbe33babf01ac7d86375a691bf07581182b541b956fe8289dfbcf"
         },
         {
           "path": "packages/editor/src/agent-builder.test.ts",
@@ -413,7 +413,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/editor/package.json",
-          "sha256": "a53ed8e37331c9e2750e0ad06cb1a867ce36a6f0f42b30b6148ec62c10cf4951"
+          "sha256": "51505fbf787c385fb401ba6269ad12bfa039b5f2cbcb7befb0ac37adb5ddb263"
         },
         {
           "path": "packages/editor/src/index.ts",
@@ -545,7 +545,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/_internals/auth/package.json",
-          "sha256": "fb03498750f91dbdb4bf29bf39043e4635b2f0dfb9b45eeffabdb3b955642a45"
+          "sha256": "e41980561038d7600141964e0ea058655aedaad7ad04debb37abb728d3c037f9"
         },
         {
           "path": "packages/_internals/auth/src/authorization.ts",
@@ -617,7 +617,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/package.json",
-          "sha256": "53e30b052120482ffd93a0ca8e0ea75bad263a00c57871d1e974dde9aea1b985"
+          "sha256": "afe655b8a1db8c52343bfbf390e2bf1b443673aeb888c15c7eb8adee381a44c8"
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
@@ -653,7 +653,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/tsdown.config.ts",
-          "sha256": "ecf50edfba04c8c053b5bb70053ff4722ed165c7a5bc61d316fc9be874dc5e68"
+          "sha256": "7d6f959c1fd1adec2080178ad52a67057c49be298685d316292611f174921a43"
         },
         {
           "path": "packages/core/src/auth/authorization.ts",
@@ -689,7 +689,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/core/src/workflows/workflow.ts",
-          "sha256": "69109ad00ff12507a49b41ece4511b7dc92e9e5438a1820e5ce24f4756dde9a0"
+          "sha256": "39eb311da8fed48ad1602bf2c067419fd2970532aee1d02eb26d4ff844979fe9"
         },
         {
           "path": "packages/core/src/auth/authorization.test.ts",
@@ -725,11 +725,11 @@
       "replacementFingerprints": [
         {
           "path": "packages/server/src/server/auth/helpers.ts",
-          "sha256": "a5f60dbb88bfee3bdee370e024786e877975c37393637c95533cfa421c187edb"
+          "sha256": "e7dfacbde290a561c3ab3085ea1ef900d13b8fd6b5d5cb3705560372a39a2c85"
         },
         {
           "path": "packages/server/src/server/handlers/auth.test.ts",
-          "sha256": "c326bf62698726f0391485f35503490d5091519686115131388771a27c5a37d3"
+          "sha256": "a76c537df9179dc2af32a77360efa73cb3c9f828422137828a89289544367c2a"
         }
       ],
       "replacementRegressionCheck": "grouped server import inventory and auth handler tests preserve public authorization",
@@ -761,7 +761,7 @@
       "replacementFingerprints": [
         {
           "path": "packages/server/src/server/handlers/editor-builder.ts",
-          "sha256": "bbe704d34bd46ab03ffecec4f357c9221ca767f56e3c54ea4173d62f0db35aec"
+          "sha256": "1c16113604ff3417268e26cce14494e3d2289e1a16f19325590b7f2d880757f7"
         },
         {
           "path": "packages/server/src/server/handlers/editor-builder.test.ts",
@@ -801,7 +801,7 @@
         },
         {
           "path": "packages/server/src/server/removed-ee-imports.test.ts",
-          "sha256": "eab85c191344f31d68899916721a46783aac4b9178339a532380a9e07609b370"
+          "sha256": "25d5383fd9254a24fd21a08b386a5e96d1e4c3321d5120011b0cc12997305295"
         }
       ],
       "replacementRegressionCheck": "inventory covers template/example consumers and clean-room packed-artifact execution enforces root public imports",

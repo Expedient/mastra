@@ -1,9 +1,9 @@
 import type { BuilderSettingsResponse } from '@mastra/client-js';
+import type { AuthCapabilities } from '@mastra/react/hooks/auth';
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { authHandler, builderHandler, renderSidebar, systemPackagesHandler } from './render-sidebar';
-import type { AuthCapabilities } from '@/domains/auth/types';
 import { server } from '@/test/msw-server';
 
 const unauthenticatedCapabilities = {
@@ -257,5 +257,15 @@ describe('AppSidebar — RBAC link gating while permission data loads', () => {
 
     const agentsLink = await screen.findByRole('link', { name: /agents/i });
     expect(agentsLink.getAttribute('href')).toBe('/agents');
+  });
+});
+
+describe('AppSidebar — removed Inbox navigation', () => {
+  it('does not render a link to the removed Inbox page', () => {
+    server.use(authHandler(authDisabledCapabilities), builderHandler(builderDisabled), systemPackagesHandler());
+
+    renderSidebar();
+
+    expect(screen.queryByRole('link', { name: /inbox/i })).toBeNull();
   });
 });

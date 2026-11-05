@@ -1,9 +1,15 @@
+import { THINKING_LEVEL_VALUES } from '@mastra/code-sdk/thinking';
+import type { ThinkingLevelSetting } from '@mastra/code-sdk/thinking';
 import { z } from 'zod';
 
+import { storedBoardDefinitionSchema, storedBoardInputSchema, storedPhaseInputSchema } from '../boards/stored-board.js';
+import { cardRuleGroupSchema } from '../rules/rule-group.js';
 import { FACTORY_ROLE_STAGES } from '../rules/types.js';
 import { BOARD_IDENTIFIER_RE, MAX_BOARD_IDENTIFIER_LENGTH } from '../rules/validation.js';
+import { FACTORY_MODEL_SCOPES } from '../storage/domains/projects/base.js';
 
 const FACTORY_ROLE_VALUES = Object.keys(FACTORY_ROLE_STAGES) as [string, ...string[]];
+export const THINKING_LEVELS = THINKING_LEVEL_VALUES as [ThinkingLevelSetting, ...ThinkingLevelSetting[]];
 
 export type FactoryRouteContract = {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -37,6 +43,27 @@ const nullableTrimmed = (max: number) =>
   ]);
 const projectPathSchema = z.object({ id: uuidSchema });
 const projectDecisionPathSchema = z.object({ id: uuidSchema, decisionId: uuidSchema });
+const boardPathSchema = z.object({ id: uuidSchema, boardKey: z.string().min(1).max(MAX_BOARD_IDENTIFIER_LENGTH) });
+const boardRevisionSchema = z.number().int().min(1);
+/** A board's definition; send the `revision` you read so a concurrent edit is not overwritten. */
+export const replaceBoardBodySchema = storedBoardDefinitionSchema.extend({ expectedRevision: boardRevisionSchema });
+export const boardDeleteQuerySchema = z.object({ expectedRevision: z.coerce.number().int().min(1) });
+const storedBoardResponseSchema = z.object({
+  board: z.object({
+    key: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    /** In order; the first phase is where cards start. */
+    phases: z.array(storedPhaseInputSchema),
+    /** Send it back as `expectedRevision` when editing. Null for code boards, which are not stored. */
+    revision: z.number().int().nullable(),
+    source: z.enum(['builtin', 'app', 'stored']),
+    /** False for built-in and app boards: they are defined in code and read-only here. */
+    editable: z.boolean(),
+    /** Problems that do not stop the board from loading, such as a review skill outside the review context. */
+    problems: z.array(z.string()),
+  }),
+});
 const workItemPathSchema = z.object({ id: uuidSchema });
 const transitionPathSchema = z.object({ id: uuidSchema, workItemId: uuidSchema });
 
@@ -48,6 +75,7 @@ const decisionResponseSchema = z.object({ decision: entitySchema });
 export const createProjectBodySchema = z.object({
   name: nonEmptyTrimmed(200),
   description: nullableTrimmed(2_000).optional().default(null),
+  modelScope: z.enum(FACTORY_MODEL_SCOPES).optional(),
 });
 
 export const updateProjectBodySchema = z
@@ -55,11 +83,155 @@ export const updateProjectBodySchema = z
     name: nonEmptyTrimmed(200).optional(),
     description: nullableTrimmed(2_000).optional(),
     defaultModelId: nullableTrimmed(200).optional(),
-    slackWorkItemsEnabled: z.boolean().optional(),
+    modelScope: z.enum(FACTORY_MODEL_SCOPES).optional(),
+    defaultThinkingLevel: z.enum(THINKING_LEVELS).optional(),
     autoRunEnabled: z.boolean().optional(),
     autoApprovePlans: z.boolean().optional(),
+    reviewTestChecksEnabled: z.boolean().optional(),
+    selfReviewEnabled: z.boolean().optional(),
   })
   .refine(input => Object.keys(input).length > 0, { message: 'At least one project field is required' });
+
+const environmentRepositorySchema = z.object({
+  projectRepositoryId: z.string(),
+  connectionId: z.string(),
+  repositoryId: z.string(),
+  // Null when the repository row behind the link is missing.
+  slug: z.string().nullable(),
+  defaultBranch: z.string().nullable(),
+  position: z.number().int(),
+  inEnvironment: z.boolean(),
+  setupCommand: z.string().nullable(),
+  teardownCommand: z.string().nullable(),
+  lastBuildStatus: z.enum(['unbuilt', 'configured', 'failed']),
+  lastBuildError: z.string().nullable(),
+  lastBuiltAt: z.string().nullable(),
+});
+
+/** The configured FactorySandbox as factory describes it: provider id, JSON Schema of its settings, capabilities. */
+export const environmentSandboxSchema = z.object({
+  provider: z.string(),
+  settingsSchema: z.record(z.string(), z.unknown()),
+  capabilities: z.object({
+    template: z.boolean(),
+    builds: z.object({ available: z.boolean(), history: z.boolean() }),
+  }),
+});
+
+/** When the environment builds on its own; present only when the sandbox can build. */
+export const environmentBuildTriggersSchema = z.object({
+  schedule: z.object({
+    enabled: z.boolean(),
+    cron: z.string().nullable(),
+    timezone: z.string().nullable(),
+    /** False when the host's storage has no schedules domain; the cron trigger cannot be enabled then. */
+    scheduleAvailable: z.boolean(),
+  }),
+  push: z.object({ enabled: z.boolean(), debounceMinutes: z.number().int() }),
+});
+
+/** The last build factory asked the provider for, from the project row only; status is read live. */
+export const environmentLastBuildSchema = z.object({ buildId: z.string(), attemptedAt: z.string().nullable() });
+
+export const projectEnvironmentResponseSchema = z.object({
+  environment: z.object({
+    sandbox: environmentSandboxSchema,
+    /** The stored settings document; only keys the user set. */
+    settings: z.record(z.string(), z.unknown()),
+    sandboxWorkingDirectory: z.string().nullable(),
+    workspaceSetupCommand: z.string().nullable(),
+    activeTemplateId: z.string().nullable(),
+    activeTemplateHeads: z.record(z.string(), z.string()).nullable(),
+    repositories: z.array(environmentRepositorySchema),
+    buildTriggers: environmentBuildTriggersSchema.optional(),
+    build: environmentLastBuildSchema.nullable().optional(),
+  }),
+});
+
+const environmentBuildStatusSchema = z.enum(['pending', 'building', 'ready', 'failed', 'unknown']);
+
+export const environmentBuildStartResponseSchema = z.object({
+  outcome: z.enum(['started', 'skipped', 'unavailable', 'failed']),
+  buildId: z.string().optional(),
+  templateId: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+export const environmentBuildSchema = z.object({
+  buildId: z.string(),
+  status: environmentBuildStatusSchema,
+  templateId: z.string().optional(),
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  error: z.string().optional(),
+  logs: z.array(z.string()).optional(),
+});
+
+export const environmentBuildsResponseSchema = z.object({ builds: z.array(environmentBuildSchema) });
+export const environmentBuildResponseSchema = z.object({ build: environmentBuildSchema });
+
+const buildPathSchema = projectPathSchema.extend({ buildId: z.string().min(1) });
+
+const environmentRepositoryPatchSchema = z.object({
+  projectRepositoryId: uuidSchema,
+  position: z.number().int().min(1).optional(),
+  inEnvironment: z.boolean().optional(),
+  setupCommand: nullableTrimmed(2_000).optional(),
+  teardownCommand: nullableTrimmed(2_000).optional(),
+});
+
+export const updateProjectEnvironmentBodySchema = z
+  .object({
+    sandboxWorkingDirectory: nullableTrimmed(1_000)
+      .refine(value => value === null || value.startsWith('/'), {
+        message: 'sandboxWorkingDirectory must be absolute',
+      })
+      .optional(),
+    /** Partial settings merged onto the stored document; null removes a key. Validated by the FactorySandbox. */
+    settings: z.record(z.string(), z.unknown().nullable()).optional(),
+    workspaceSetupCommand: nullableTrimmed(2_000).optional(),
+    /** Build triggers; only accepted when the sandbox can build. */
+    buildTriggers: z
+      .object({
+        schedule: z
+          .object({
+            enabled: z.boolean(),
+            cron: z.string().trim().min(1).max(100).optional(),
+            timezone: z.string().trim().min(1).max(100).optional(),
+          })
+          .optional(),
+        push: z
+          .object({
+            enabled: z.boolean().optional(),
+            debounceMinutes: z.number().int().min(0).max(1_440).optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+    repositories: z
+      .array(environmentRepositoryPatchSchema)
+      .max(100)
+      .superRefine((entries, ctx) => {
+        const ids = new Set(entries.map(entry => entry.projectRepositoryId));
+        if (ids.size !== entries.length) {
+          ctx.addIssue({ code: 'custom', message: 'Each repository may be listed once' });
+        }
+        const positions = entries.flatMap(entry => (entry.position === undefined ? [] : [entry.position]));
+        if (positions.length === 0) return;
+        const expected = Array.from({ length: entries.length }, (_, index) => index + 1);
+        if (
+          positions.length !== entries.length ||
+          [...positions].sort((a, b) => a - b).some((p, i) => p !== expected[i])
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Positions must be a permutation of 1..n over the listed repositories',
+          });
+        }
+      })
+      .optional(),
+  })
+  .refine(input => Object.keys(input).length > 0, { message: 'At least one environment field is required' });
 
 const stagesSchema = z
   .array(
@@ -102,6 +274,7 @@ const metadataSchema = z
     const {
       factoryRuleMaterializationKey: _materialization,
       factoryPullRequestReconciliation: _reconciliation,
+      externalSourceMissingAt: _externalSourceMissingAt,
       ...metadata
     } = value;
     return metadata;
@@ -237,7 +410,6 @@ const attentionKindSchema = z.enum([
   'automation-proposed',
   'mention',
   'activity',
-  'supervisor-finding',
   'agent-waiting',
 ]);
 type AttentionKind = z.infer<typeof attentionKindSchema>;
@@ -312,13 +484,10 @@ const attentionActionPathSchema = z
         return z.NEVER;
       }),
   })
-  .refine(
-    input =>
-      input.kind === 'supervisor-finding'
-        ? /^[a-z0-9:_-]{1,256}$/i.test(input.sourceId)
-        : new RegExp(UUID_PATTERN).test(input.sourceId),
-    { message: 'Invalid attention source id', path: ['sourceId'] },
-  );
+  .refine(input => new RegExp(UUID_PATTERN).test(input.sourceId), {
+    message: 'Invalid attention source id',
+    path: ['sourceId'],
+  });
 
 export const FACTORY_ROUTE_CONTRACTS = {
   projectList: {
@@ -348,6 +517,66 @@ export const FACTORY_ROUTE_CONTRACTS = {
     pathSchema: projectPathSchema,
     bodySchema: updateProjectBodySchema,
     responseSchema: projectResponseSchema,
+  },
+  projectEnvironmentGet: {
+    method: 'GET',
+    path: '/web/factory/projects/:id/environment',
+    description: 'Get the sandbox environment of a Factory project: provider settings and its repositories in order',
+    pathSchema: projectPathSchema,
+    responseSchema: projectEnvironmentResponseSchema,
+  },
+  projectEnvironmentUpdate: {
+    method: 'PATCH',
+    path: '/web/factory/projects/:id/environment',
+    description: 'Update the sandbox environment of a Factory project: provider settings, repository order and setup',
+    pathSchema: projectPathSchema,
+    bodySchema: updateProjectEnvironmentBodySchema,
+    responseSchema: projectEnvironmentResponseSchema,
+  },
+  projectEnvironmentBuild: {
+    method: 'POST',
+    path: '/web/factory/projects/:id/environment/build',
+    description: 'Build the sandbox environment template of a Factory project now',
+    pathSchema: projectPathSchema,
+    responseSchema: environmentBuildStartResponseSchema,
+  },
+  projectEnvironmentBuilds: {
+    method: 'GET',
+    path: '/web/factory/projects/:id/environment/builds',
+    description:
+      'List the environment template builds of a Factory project, newest first, when the provider keeps history',
+    pathSchema: projectPathSchema,
+    responseSchema: environmentBuildsResponseSchema,
+  },
+  projectEnvironmentBuildGet: {
+    method: 'GET',
+    path: '/web/factory/projects/:id/environment/builds/:buildId',
+    description: 'Get the live status of one environment template build of a Factory project',
+    pathSchema: buildPathSchema,
+    responseSchema: environmentBuildResponseSchema,
+  },
+  projectApplyDefaultModel: {
+    method: 'POST',
+    path: '/web/factory/projects/:id/apply-default-model',
+    description: 'Apply the Factory default model to running work and review threads',
+    pathSchema: projectPathSchema,
+    responseSchema: z.object({
+      modelId: z.string(),
+      applied: z.array(z.string()),
+      skipped: z.array(
+        z.object({
+          threadId: z.string(),
+          reason: z.enum([
+            'not-running',
+            'work-item-missing',
+            'stage-inactive',
+            'thread-missing',
+            'mode-unknown',
+            'apply-failed',
+          ]),
+        }),
+      ),
+    }),
   },
   projectDelete: {
     method: 'DELETE',
@@ -380,20 +609,83 @@ export const FACTORY_ROUTE_CONTRACTS = {
       boards: z.array(
         z.object({
           id: z.string(),
+          /** Absent from servers older than the phase fields. */
+          name: z.string().optional(),
+          /** @deprecated Use `name`. */
           title: z.string(),
+          description: z.string().optional(),
+          /** Where the board came from: Factory's built-ins, the app's code, or created through the API. */
+          source: z.enum(['builtin', 'app', 'stored']).optional(),
+          /** False for built-in and app boards, which are defined in code and read-only. */
+          editable: z.boolean().optional(),
+          /** Problems with the board, such as a runner skill that does not exist. */
+          problems: z.array(z.string()).optional(),
           initialPhase: z.string(),
           phases: z.array(
             z.object({
               id: z.string(),
+              name: z.string().optional(),
+              /** @deprecated Use `name`. */
               title: z.string(),
+              description: z.string().optional(),
               kind: z.enum(['resting', 'working', 'terminal']),
+              nextPhases: z.array(z.string()).optional(),
+              /** The session context a working phase runs in. */
+              context: z.string().optional(),
+              /** @deprecated Use `context`. */
               role: z.string().optional(),
+              /** The skill the phase's runner starts when a card enters it (`runner.skill`). */
+              skill: z.string().optional(),
+              autoStart: z.boolean().optional(),
+              /** Cards the phase starts on its own for; absent means every card. */
+              autoStartWhen: cardRuleGroupSchema.optional(),
+              exitTool: z
+                .object({
+                  id: z.string(),
+                  autoApprove: z.boolean(),
+                  /** Cards the exit tool is approved for; absent means every card. */
+                  autoApproveWhen: cardRuleGroupSchema.optional(),
+                })
+                .optional(),
               transitions: z.array(z.object({ outcome: z.string().nullable(), to: z.string() })),
             }),
           ),
         }),
       ),
+      /** Stored boards that could not be loaded or are hidden by a code board with the same key, and why. */
+      problems: z.array(z.string()).optional(),
     }),
+  },
+  boardGet: {
+    method: 'GET',
+    path: '/web/factory/projects/:id/boards/:boardKey',
+    description: "Get a project board's definition",
+    pathSchema: boardPathSchema,
+    responseSchema: storedBoardResponseSchema,
+  },
+  boardCreate: {
+    method: 'POST',
+    path: '/web/factory/projects/:id/boards',
+    description: 'Create a board in a Factory project',
+    pathSchema: projectPathSchema,
+    bodySchema: storedBoardInputSchema,
+    responseSchema: storedBoardResponseSchema,
+  },
+  boardReplace: {
+    method: 'PATCH',
+    path: '/web/factory/projects/:id/boards/:boardKey',
+    description: "Replace a project board's definition",
+    pathSchema: boardPathSchema,
+    bodySchema: replaceBoardBodySchema,
+    responseSchema: storedBoardResponseSchema,
+  },
+  boardDelete: {
+    method: 'DELETE',
+    path: '/web/factory/projects/:id/boards/:boardKey',
+    description: 'Delete a board from a Factory project',
+    pathSchema: boardPathSchema,
+    querySchema: boardDeleteQuerySchema,
+    responseSchema: z.null(),
   },
   workItemList: {
     method: 'GET',
@@ -530,24 +822,6 @@ export const FACTORY_ROUTE_CONTRACTS = {
     description: 'Restore an archived Factory attention receipt',
     pathSchema: attentionActionPathSchema,
     responseSchema: z.object({ receipt: entitySchema }),
-  },
-  supervisorSession: {
-    method: 'POST',
-    path: '/web/factory/projects/:id/supervisor/session',
-    description: 'Get the deterministic Factory supervisor session address',
-    pathSchema: projectPathSchema,
-    responseSchema: z.object({ sessionId: z.string(), threadId: z.string(), factoryProjectId: uuidSchema }),
-  },
-  supervisorHealth: {
-    method: 'GET',
-    path: '/web/factory/projects/:id/supervisor/health',
-    description: 'Run the deterministic Factory supervisor health check',
-    pathSchema: projectPathSchema,
-    responseSchema: z.object({
-      checkedAt: z.string(),
-      findings: z.array(entitySchema),
-      counts: z.record(z.string(), z.number().int().nonnegative()),
-    }),
   },
 } as const satisfies Record<string, FactoryRouteContract>;
 

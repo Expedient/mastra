@@ -1,13 +1,15 @@
 /* eslint-disable react-refresh/only-export-components */
+import { XIcon } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { traceFilterFieldColor, traceFilterFieldIcon } from '../trace-filters';
-import type { DateTimeRangePickerProps } from '@/ds/components/DateTimeRangePicker';
+import type { DateRangePreset, DateTimeRangePickerProps } from '@/ds/components/DateTimeRangePicker';
 import { DateTimeRangePicker } from '@/ds/components/DateTimeRangePicker';
 import {
   FilterBarChip,
   FilterBarFieldLabel,
   editableSegmentClass,
   fieldSegmentAccentStyle,
+  removeSegmentClass,
   segmentClass,
 } from '@/ds/components/FilterBar/filter-bar-chip';
 import { useFilterBarContext } from '@/ds/components/FilterBar/filter-bar-context';
@@ -40,8 +42,22 @@ export const TRACE_TIME_RANGE_ITEM: FilterBarItem = {
 
 export type TraceTimeRangeChipProps = Pick<
   DateTimeRangePickerProps,
-  'preset' | 'onPresetChange' | 'dateFrom' | 'dateTo' | 'onDateChange' | 'onDateRangeChange' | 'disabled' | 'presets'
->;
+  | 'preset'
+  | 'onPresetChange'
+  | 'dateFrom'
+  | 'dateTo'
+  | 'onDateChange'
+  | 'onDateRangeChange'
+  | 'disabled'
+  | 'maxRangeMs'
+  | 'minDate'
+  | 'presets'
+> & {
+  /** Shows a × that switches back to this preset whenever another range is selected. */
+  defaultPreset?: DateRangePreset;
+  /** Replaces what the × does, e.g. to undo a histogram zoom before falling back to `defaultPreset`. */
+  onReset?: () => void;
+};
 
 const isSegment = (target: EventTarget | null) =>
   target instanceof HTMLElement && target.hasAttribute('data-filter-bar-segment');
@@ -49,16 +65,14 @@ const isSegment = (target: EventTarget | null) =>
 /**
  * The trace list's date range rendered as a FilterBar chip: `Time <preset>`. Always
  * present and non-removable; the value segment opens the regular DateTimeRangePicker
- * menu/popover.
+ * menu/popover. With `defaultPreset`, a trailing × resets the range to it.
  */
-export function TraceTimeRangeChip(props: TraceTimeRangeChipProps) {
+export function TraceTimeRangeChip({ defaultPreset, onReset, ...props }: TraceTimeRangeChipProps) {
   const ctx = useFilterBarContext();
+  const canReset = defaultPreset !== undefined && props.preset !== defaultPreset;
   return (
     <FilterBarChip item={TRACE_TIME_RANGE_ITEM} removable={false}>
-      <span
-        className={cn(segmentClass, 'text-foreground last:rounded-r-none')}
-        style={fieldSegmentAccentStyle(TRACE_TIME_RANGE_FIELD)}
-      >
+      <span className={cn(segmentClass, 'text-foreground')} style={fieldSegmentAccentStyle(TRACE_TIME_RANGE_FIELD)}>
         <FilterBarFieldLabel field={TRACE_TIME_RANGE_FIELD} />
       </span>
       {/* The picker popup is portaled but bubbles React events through here — keep its
@@ -79,13 +93,28 @@ export function TraceTimeRangeChip(props: TraceTimeRangeChipProps) {
               disabled={disabled}
               aria-label={`Value: ${label}`}
               title={label}
-              className={cn(editableSegmentClass, 'first:rounded-l-none')}
+              className={editableSegmentClass}
             >
               <span className="truncate">{label}</span>
             </button>
           )}
         />
       </div>
+      {canReset && (
+        <button
+          type="button"
+          data-filter-bar-segment=""
+          tabIndex={-1}
+          ref={el => ctx.registerSegment(TRACE_TIME_RANGE_ITEM.id, 'remove', el)}
+          disabled={props.disabled}
+          aria-label="Reset time range"
+          title="Reset time range"
+          className={removeSegmentClass}
+          onClick={() => (onReset ? onReset() : props.onPresetChange?.(defaultPreset))}
+        >
+          <XIcon className="size-[1.1em]" />
+        </button>
+      )}
     </FilterBarChip>
   );
 }

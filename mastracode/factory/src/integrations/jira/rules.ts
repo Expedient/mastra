@@ -1,11 +1,19 @@
-import { boardForWorkItem, isTerminalWorkItem } from '../../boards/index.js';
+import {
+  boardEventHandlers,
+  boardForWorkItem,
+  eventBoardId,
+  isTerminalWorkItem,
+  rulePhaseField,
+  withBoardClosure,
+} from '../../boards/index.js';
 import type { BoardRegistry } from '../../boards/index.js';
+import { selectEventRule } from '../../rules/event-rules.js';
 import type { FactoryJiraRuleContext, FactoryRuleDecision } from '../../rules/types.js';
 import { assertFactoryDecisionTarget, validateFactoryRuleDecisions } from '../../rules/validation.js';
 import type { FactoryProjectsStorage } from '../../storage/domains/projects/base.js';
 import type { WorkItemRow, WorkItemsStorage } from '../../storage/domains/work-items/base.js';
 import type { IntegrationContext } from '../base.js';
-import { jiraClaimKey } from './claim.js';
+import { jiraClaimKey, jiraIssueCards } from './claim.js';
 import type { JiraEventRules } from './default-rules.js';
 
 const RULE_TIMEOUT_MS = 5_000;
@@ -23,6 +31,8 @@ async function withRuleTimeout<T>(promise: Promise<T>): Promise<T> {
     if (timeout) clearTimeout(timeout);
   }
 }
+
+const MAX_STALE_RULE_ATTEMPTS = 3;
 
 export interface JiraIssueIngress {
   /** Stable issue reference — direct Jira id or the Platform-encoded issue reference. */
@@ -95,25 +105,21 @@ export class JiraRules {
   }
 
   async #heldElsewhere(input: JiraRulesIngress, issue: JiraIssueIngress): Promise<boolean> {
-    const heldLive = (row: WorkItemRow) =>
-      row.factoryProjectId !== input.factoryProjectId && !isTerminalWorkItem(this.options.boards, row);
-    const claimant = await this.options.storage.getByClaimKey({
-      orgId: input.orgId,
-      claimKey: jiraClaimKey(issue.id),
-    });
-    if (claimant && heldLive(claimant)) return true;
-    // Cards filed before claims existed carry only the issue reference.
-    const legacy = await this.options.storage.listBySource({
-      orgId: input.orgId,
-      source: { integrationId: 'jira', type: 'issue', externalId: issue.id },
-    });
-    return legacy.some(heldLive);
+    const cards = await jiraIssueCards(this.options.storage, { orgId: input.orgId, issueRef: issue.id });
+    const liveElsewhere = cards.filter(
+      row => row.factoryProjectId !== input.factoryProjectId && !isTerminalWorkItem(this.options.boards, row),
+    );
+    for (const row of liveElsewhere) {
+      if (await this.options.projects.get({ orgId: input.orgId, id: row.factoryProjectId })) return true;
+    }
+    return false;
   }
 
   async #ingestIssue(
     input: JiraRulesIngress,
     issue: JiraIssueIngress,
     relatedItem: WorkItemRow | undefined,
+    attempt = 1,
   ): Promise<IngressStatus> {
     const ingressId = `jira:${issue.id}:${issue.updatedAt}`;
     const actor = { type: 'human' as const, id: input.userId };
@@ -149,6 +155,8 @@ export class JiraRules {
             },
             board: boardForWorkItem(relatedItem),
             itemRevision: relatedItem.revision,
+            ...withBoardClosure(this.options.boards, relatedItem),
+            ...rulePhaseField(this.options.boards, relatedItem),
           }
         : {}),
       ...(boundBoard ? { intake: { board: boundBoard.id, initialPhase: boundBoard.initialPhase } } : {}),
@@ -156,7 +164,11 @@ export class JiraRules {
       issue,
     };
 
-    const rule = this.options.jiraRules[context.event];
+    const rule = selectEventRule(
+      this.options.jiraRules,
+      boardEventHandlers(this.options.boards, eventBoardId(context), 'jira'),
+      context.event,
+    );
     let decision: FactoryRuleDecision | void;
     let decisions: Record<string, unknown>[] = [];
     let outcome: { status: 'accepted' | 'rejected'; code?: string; reason?: string } = { status: 'accepted' };
@@ -200,6 +212,15 @@ export class JiraRules {
       causalChain: [],
       now: new Date(),
     });
+    if (committed.status === 'stale') {
+      // Nothing was persisted: re-read the item and evaluate again at its fresh revision.
+      if (attempt >= MAX_STALE_RULE_ATTEMPTS) {
+        throw new Error(`Factory Jira rule evaluation for ${ingressId} kept losing revision races.`);
+      }
+      const fresh = relatedItem ? await this.options.storage.get({ orgId: input.orgId, id: relatedItem.id }) : null;
+      if (relatedItem && !fresh) return 'missing';
+      return this.#ingestIssue(input, issue, fresh ?? undefined, attempt + 1);
+    }
     return committed.status;
   }
 }

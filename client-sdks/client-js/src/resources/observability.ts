@@ -1,6 +1,14 @@
 import type { SpanType } from '@mastra/core/observability';
-import type { QueryThreadsInput, QueryThreadsResult, TraceQueryPredicate } from '@mastra/core/storage';
-import type { ClientOptions, ListFeedbackResponse } from '../types';
+import type {
+  QueryThreadsInput,
+  QueryThreadsResult,
+  ThreadQueryRequest,
+  ThreadQueryResponse,
+  SpanQueryRequest,
+  SpanQueryResponse,
+  TraceQueryPredicate,
+} from '@mastra/core/storage';
+import type { ClientOptions, GetObservabilityCapabilitiesResponse, ListFeedbackResponse } from '../types';
 import { toQueryParams } from '../utils';
 import { BaseResource } from './base';
 import type {
@@ -12,6 +20,13 @@ import type {
   ListTracesLightResponse,
   TraceQueryRequest,
   TraceQueryResponse,
+  TraceQueryTraceResponse,
+  TraceQueryKeysetTraceResponse,
+  TraceQueryGroupResponse,
+  AggregateTracesArgs,
+  AggregateTracesResponse,
+  AggregateSpansArgs,
+  AggregateSpansResponse,
   GetTraceQueryFieldsArgs,
   GetTraceQueryFieldsResponse,
   GetTraceQueryValuesArgs,
@@ -126,24 +141,64 @@ export interface LegacyGetTracesResponse {
 
 export type ListScoresBySpanParams = SpanIds & PaginationArgs;
 
-type QueryTracesBaseInput = Omit<TraceQueryRequest, 'group' | 'where' | 'page' | 'pagination'> & {
+type QueryTracesBaseInput = Omit<
+  TraceQueryRequest,
+  'group' | 'where' | 'page' | 'pagination' | 'mode' | 'after' | 'limit'
+> & {
   where?: TraceQueryPredicate;
-  group?: never;
 };
 
-type QueryTracesKeysetInput = QueryTracesBaseInput & {
+export type QueryTracesKeysetInput = QueryTracesBaseInput & {
+  group?: never;
   page?: TraceQueryRequest['page'];
   pagination?: never;
+  mode?: never;
+  after?: never;
+  limit?: never;
 };
 
-type QueryTracesPaginatedInput = QueryTracesBaseInput & {
+export type QueryTracesPaginatedInput = QueryTracesBaseInput & {
+  group?: never;
   page?: never;
   pagination: NonNullable<TraceQueryRequest['pagination']>;
+  mode?: never;
+  after?: never;
+  limit?: never;
 };
 
-export type QueryTracesInput = QueryTracesKeysetInput | QueryTracesPaginatedInput;
-export type QueryTraceThreadsInput = QueryThreadsInput;
-export type QueryTraceThreadsResult = QueryThreadsResult;
+export type QueryTracesDeltaInput = Omit<QueryTracesBaseInput, 'orderBy'> & {
+  group?: never;
+  mode: 'delta';
+  after?: string;
+  limit?: number;
+  page?: never;
+  pagination?: never;
+  orderBy?: never;
+};
+
+export type QueryTracesGroupedInput = QueryTracesBaseInput & {
+  /**
+   * @deprecated Use `queryTraceThreads()` instead. Grouped trace queries remain supported until the next major release.
+   */
+  group: NonNullable<TraceQueryRequest['group']>;
+  page?: TraceQueryRequest['page'];
+  pagination?: never;
+  mode?: never;
+  after?: never;
+  limit?: never;
+  orderBy?: never;
+};
+
+export type QueryTracesUngroupedInput = QueryTracesKeysetInput | QueryTracesPaginatedInput | QueryTracesDeltaInput;
+export type QueryTracesInput = QueryTracesUngroupedInput | QueryTracesGroupedInput;
+export type QueryTraceThreadsInput = ThreadQueryRequest | QueryThreadsInput;
+export type QueryTraceThreadsResult<T extends QueryTraceThreadsInput = ThreadQueryRequest> = T extends {
+  timeRange: unknown;
+}
+  ? ThreadQueryResponse
+  : QueryThreadsResult;
+export type QuerySpansInput = SpanQueryRequest;
+export type QuerySpansResult = SpanQueryResponse;
 
 // ============================================================================
 // Observability Resource
@@ -259,11 +314,35 @@ export class Observability extends BaseResource {
   /**
    * Queries completed logical traces using recursive trace and related-record predicates.
    *
+   * Grouped results remain supported but are deprecated. Use `queryTraceThreads()` to retrieve thread identities.
+   *
    * @param params - Advanced trace query, including its required time range
    * @returns Matching lightweight traces
    */
+  queryTraces(params: QueryTracesGroupedInput): Promise<TraceQueryGroupResponse>;
+  queryTraces(params: QueryTracesDeltaInput): Promise<Extract<TraceQueryResponse, { delta: unknown }>>;
+  queryTraces(params: QueryTracesPaginatedInput): Promise<Extract<TraceQueryResponse, { pagination: unknown }>>;
+  queryTraces(params: QueryTracesKeysetInput): Promise<TraceQueryKeysetTraceResponse>;
+  queryTraces(params: QueryTracesInput): Promise<TraceQueryResponse>;
   queryTraces(params: QueryTracesInput): Promise<TraceQueryResponse> {
     return this.request('/observability/traces/query', { method: 'POST', body: params });
+  }
+
+  /**
+   * Groups and measures the traces selected by a time range and optional trace-query predicate.
+   * Check `capabilities.traceAggregate` from `getObservabilityCapabilities()` first; servers without it return 404 or 501.
+   */
+  aggregateTraces(params: AggregateTracesArgs, options?: { signal?: AbortSignal }): Promise<AggregateTracesResponse> {
+    return this.request('/observability/traces/aggregate', { method: 'POST', body: params, signal: options?.signal });
+  }
+
+  /**
+   * Groups and measures individual completed spans selected by a time range and optional span-query predicate.
+   * Token and cost measures count usage recorded on each span itself. Check `capabilities.spanAggregate` from
+   * `getObservabilityCapabilities()` first; servers without it return 404 or 501.
+   */
+  aggregateSpans(params: AggregateSpansArgs): Promise<AggregateSpansResponse> {
+    return this.request('/observability/spans/aggregate', { method: 'POST', body: params });
   }
 
   /** Returns canonical and observed fields available to the advanced trace-query grammar. */
@@ -293,13 +372,23 @@ export class Observability extends BaseResource {
   }
 
   /**
-   * Queries thread identities using eligible-trace and cross-trace predicates.
+   * Queries full-history thread rows using a trace or thread activity window.
    *
-   * @param params - Thread query with its eligible trace selection
-   * @returns Matching thread identities
+   * @param params - Thread query with its qualification window, filters and pagination
+   * @returns Matching thread rows. Legacy requests retain their identity-only response.
    */
-  queryTraceThreads(params: QueryTraceThreadsInput): Promise<QueryTraceThreadsResult> {
+  queryTraceThreads<T extends QueryTraceThreadsInput>(params: T): Promise<QueryTraceThreadsResult<T>> {
     return this.request('/observability/threads/query', { method: 'POST', body: params });
+  }
+
+  /**
+   * Queries completed spans using a span predicate, returning one row per matching span.
+   *
+   * @param params - Span query, including its required time range
+   * @returns Matching span rows with model/provider fields and input/output/error previews
+   */
+  querySpans(params: QuerySpansInput): Promise<QuerySpansResult> {
+    return this.request('/observability/spans/query', { method: 'POST', body: params });
   }
 
   /**
@@ -668,5 +757,12 @@ export class Observability extends BaseResource {
   getTags(params: GetTagsArgs = {}): Promise<GetTagsResponse> {
     const queryString = toQueryParams(params);
     return this.request(`/observability/discovery/tags${queryString ? `?${queryString}` : ''}`);
+  }
+
+  /**
+   * Returns which optional observability APIs the configured observability storage supports.
+   */
+  getCapabilities(): Promise<GetObservabilityCapabilitiesResponse> {
+    return this.request('/observability/capabilities');
   }
 }

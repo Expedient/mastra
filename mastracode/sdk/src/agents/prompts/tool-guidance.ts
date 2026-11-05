@@ -35,7 +35,7 @@ You have access to the following tools. Use the RIGHT tool for the job:`);
   if (!denied.has(MC_TOOLS.VIEW)) {
     readTools.push(`
 **${MC_TOOLS.VIEW}** — Read file contents
-- Use this to read files before editing them. NEVER propose changes to code you haven't read.
+- Use this to read file contents. Don't propose changes to code you haven't seen; reading with shell commands (cat, sed, rg) also works.
 - Use \`offset\` (1-indexed start line) and \`limit\` (number of lines) for large files.
 - Example: Read lines 50-100: \`{ path: "src/big-file.ts", offset: 50, limit: 51 }\`
 - To list directories, use \`${MC_TOOLS.FIND_FILES}\` instead.`);
@@ -68,6 +68,7 @@ You have access to the following tools. Use the RIGHT tool for the job:`);
 - Prefer dedicated tools for: file reading (${MC_TOOLS.VIEW}), file search (${MC_TOOLS.SEARCH_CONTENT}/${MC_TOOLS.FIND_FILES}), file editing (${MC_TOOLS.STRING_REPLACE_LSP}/${MC_TOOLS.WRITE_FILE}).
 - Commands have a 30-second default timeout. Use \`timeout\` for longer commands, \`cwd\` for working directory.
 - Use the \`tail\` parameter or pipe to \`| tail -N\` to limit output — the full output streams to the user, only the tail is returned to you. If you're building any kind of package you should be tailing.
+- Always set \`description\` to a 5-10 word summary of what the command does; the user sees it instead of the raw command. Put it first in the arguments, before \`command\`, so the user sees it while the rest of the call streams in. Write each one as the next step in a running narrative that can lean on earlier commands (e.g. "Searching open PRs for failing CI", then "Drilling into the first of 15 failures").
 - Good: Run independent commands in parallel when possible.
 - Bad: Running \`cat file.txt\` — use the ${MC_TOOLS.VIEW} tool instead.`);
   }
@@ -105,7 +106,6 @@ You have access to the following tools. Use the RIGHT tool for the job:`);
     if (!denied.has(MC_TOOLS.STRING_REPLACE_LSP)) {
       writeTools.push(`
 **${MC_TOOLS.STRING_REPLACE_LSP}** — Edit files by replacing exact text
-- You MUST read a file with \`${MC_TOOLS.VIEW}\` before editing it.
 - \`old_string\` must be an exact match of existing text in the file.
 - Provide enough surrounding context in \`old_string\` to make it unique.
 - Use \`replace_all: true\` to replace all occurrences (default: false, requires unique match).
@@ -118,7 +118,7 @@ You have access to the following tools. Use the RIGHT tool for the job:`);
       writeTools.push(`
 **${MC_TOOLS.WRITE_FILE}** — Create new files or overwrite existing ones
 - Use this to create new files.
-- If overwriting an existing file, you MUST have read it first with \`${MC_TOOLS.VIEW}\`.
+- Overwriting replaces the whole file, so make sure you know its current contents first.
 - Prefer editing existing files over creating new ones.`);
     }
 

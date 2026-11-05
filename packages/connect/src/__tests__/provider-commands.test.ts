@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -21,6 +21,31 @@ const action = createAction({
   scopes: [],
   exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
     const response = await nango.post({ endpoint: '/echo', data: input });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
+const getUserDriveActionTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({
+  userId: z.string().describe('User ID or user principal name.'),
+});
+const OutputSchema = z.object({ id: z.string() });
+
+const action = createAction({
+  description: "Get a user's personal OneDrive (drive).",
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const response = await nango.get({
+      endpoint: \`/v1.0/users/\${encodeURIComponent(input.userId)}/drive\`,
+    });
     return OutputSchema.parse(response.data);
   },
 });
@@ -78,21 +103,144 @@ const action = createAction({
 export default action;
 `;
 
-const unsupportedResponseTypeTemplate = `import { z } from 'zod';
+const arrayBufferResponseTypeTemplate = `import { z } from 'zod';
 import { createAction } from 'nango';
 
-const InputSchema = z.object({ value: z.string() });
-const OutputSchema = z.object({ value: z.string() });
+const InputSchema = z.object({ fileId: z.string() });
+const OutputSchema = z.object({ base64: z.string() });
 
 const action = createAction({
-  description: 'Fetch a binary value.',
+  description: 'Fetch a binary asset and return it base64-encoded.',
   version: '1.0.0',
   input: InputSchema,
   output: OutputSchema,
   scopes: [],
   exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
-    const response = await nango.post({ endpoint: '/binary', data: input, responseType: 'arraybuffer' });
+    const response = await nango.get({
+      endpoint: '/files/' + encodeURIComponent(input.fileId),
+      responseType: 'arraybuffer',
+    });
+    const buffer = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data as ArrayBuffer);
+    return { base64: buffer.toString('base64') };
+  },
+});
+
+export default action;
+`;
+
+const genericTypedRequestTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ itemId: z.string() });
+const OutputSchema = z.object({ id: z.string() });
+
+const action = createAction({
+  description: 'Fetch an item with a typed response.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const response = await nango.get<unknown>({ endpoint: '/items/' + encodeURIComponent(input.itemId) });
     return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
+const genericProxyRequestTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ fileId: z.string() });
+const OutputSchema = z.object({ base64: z.string() });
+
+const action = createAction({
+  description: 'Fetch binary content through the generic proxy helper.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const response = await nango.proxy({
+      endpoint: '/files/' + encodeURIComponent(input.fileId),
+      responseType: 'arraybuffer',
+    });
+    return { base64: Buffer.from(response.data as ArrayBuffer).toString('base64') };
+  },
+});
+
+export default action;
+`;
+
+const randomUuidImportTemplate = `import { randomUUID } from 'crypto';
+import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ value: z.string() });
+const OutputSchema = z.object({ id: z.string() });
+
+const action = createAction({
+  description: 'Create an item with a unique id.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const id = randomUUID();
+    await nango.post({ endpoint: '/items', data: { id, value: input.value } });
+    return { id };
+  },
+});
+
+export default action;
+`;
+
+const paginateOnlyTemplate = `import { z } from 'zod';
+import { createAction, type ProxyConfiguration } from 'nango';
+
+const InputSchema = z.object({ listId: z.string() });
+const OutputSchema = z.object({ ids: z.array(z.string()) });
+
+const action = createAction({
+  description: 'List every item, following provider next-links.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const config: ProxyConfiguration = {
+      endpoint: '/lists/' + encodeURIComponent(input.listId) + '/items',
+      paginate: { type: 'link', link_path_in_response_body: '@odata.nextLink', response_path: 'value' },
+    };
+    const ids: string[] = [];
+    for await (const page of nango.paginate<{ id: string }>(config)) {
+      ids.push(...page.map(item => item.id));
+    }
+    return { ids };
+  },
+});
+
+export default action;
+`;
+
+const graphCursorTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ cursor: z.string().optional() });
+const OutputSchema = z.object({ nextCursor: z.string().optional() });
+
+const action = createAction({
+  description: 'List users.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const baseUrl = 'https://graph.microsoft.com';
+    const endpoint = input.cursor ? input.cursor.slice(baseUrl.length) : '/v1.0/users';
+    await nango.get({ endpoint });
+    return {};
   },
 });
 
@@ -155,6 +303,103 @@ const action = createAction({
 export default action;
 `;
 
+const connectionCredentialsTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ value: z.string() });
+const OutputSchema = z.object({ value: z.string() });
+
+const action = createAction({
+  description: 'Echo a value using the connection token.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const connection = await nango.getConnection();
+    const token = connection.credentials.access_token;
+    const response = await nango.get({ endpoint: \`/echo/\${token}\`, params: { value: input.value } });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
+const inputCredentialsTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ credentials: z.object({ user: z.string() }) });
+const OutputSchema = z.object({ value: z.string() });
+
+const action = createAction({
+  description: 'Echo a caller-supplied credentials field without touching connection credentials.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const connection = await nango.getConnection();
+    const response = await nango.post({
+      endpoint: '/echo',
+      data: { user: input.credentials.user, region: connection.connection_config.region },
+    });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
+const shadowedCredentialsTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ accounts: z.array(z.object({ credentials: z.string() })) });
+const OutputSchema = z.object({ value: z.string() });
+
+const action = createAction({
+  description: 'Read credentials off a shadowing callback parameter, not the connection.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const connection = await nango.getConnection();
+    const tokens = input.accounts.map(connection => connection.credentials);
+    const response = await nango.post({
+      endpoint: '/echo',
+      data: { tokens, region: connection.connection_config.region },
+    });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
+const parenthesizedCredentialsTemplate = `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const InputSchema = z.object({ value: z.string() });
+const OutputSchema = z.object({ value: z.string() });
+
+const action = createAction({
+  description: 'Read the connection token through a parenthesized call.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const connection = await (nango.getConnection());
+    const token = connection.credentials.access_token;
+    const response = await nango.get({ endpoint: \`/echo/\${token}\`, params: { value: input.value } });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`;
+
 const noProxyCallTemplate = `import { z } from 'zod';
 import { createAction } from 'nango';
 
@@ -194,11 +439,37 @@ describe('maintainer provider commands', () => {
         writeFileSync(resolve(actionDir, 'proxy-configuration.ts'), proxyConfigurationTemplate);
         writeFileSync(resolve(actionDir, 'connection-context.ts'), connectionContextTemplate);
         writeFileSync(resolve(actionDir, 'inline-context-helper.ts'), inlineContextHelperTemplate);
+        writeFileSync(resolve(actionDir, 'connection-credentials.ts'), connectionCredentialsTemplate);
+        writeFileSync(resolve(actionDir, 'input-credentials.ts'), inputCredentialsTemplate);
+        writeFileSync(resolve(actionDir, 'shadowed-credentials.ts'), shadowedCredentialsTemplate);
+        writeFileSync(resolve(actionDir, 'parenthesized-credentials.ts'), parenthesizedCredentialsTemplate);
         writeFileSync(resolve(actionDir, 'unsupported-no-proxy.ts'), noProxyCallTemplate);
-        writeFileSync(resolve(actionDir, 'unsupported-response-type.ts'), unsupportedResponseTypeTemplate);
+        writeFileSync(resolve(actionDir, 'arraybuffer-response-type.ts'), arrayBufferResponseTypeTemplate);
+        writeFileSync(resolve(actionDir, 'generic-typed-request.ts'), genericTypedRequestTemplate);
+        writeFileSync(resolve(actionDir, 'generic-proxy-request.ts'), genericProxyRequestTemplate);
+        writeFileSync(resolve(actionDir, 'random-uuid-import.ts'), randomUuidImportTemplate);
+        writeFileSync(resolve(actionDir, 'paginate-only.ts'), paginateOnlyTemplate);
       }
     }
-    const openaiActionDir = resolve(packageRoot, '.templates', 'integrations', 'openai', 'actions');
+    const integrationsDir = resolve(packageRoot, '.templates', 'integrations');
+    symlinkSync('first-provider', resolve(integrationsDir, 'first-provider-alias'), 'dir');
+    const outsideActionDir = resolve(packageRoot, 'outside-provider', 'actions');
+    mkdirSync(outsideActionDir, { recursive: true });
+    writeFileSync(resolve(outsideActionDir, 'echo.ts'), actionTemplate);
+    symlinkSync(resolve(packageRoot, 'outside-provider'), resolve(integrationsDir, 'outside-provider-alias'), 'dir');
+    mkdirSync(resolve(integrationsDir, 'outside-actions-provider'));
+    symlinkSync(outsideActionDir, resolve(integrationsDir, 'outside-actions-provider', 'actions'), 'dir');
+    const outsideFileActionDir = resolve(integrationsDir, 'outside-file-provider', 'actions');
+    mkdirSync(outsideFileActionDir, { recursive: true });
+    symlinkSync(resolve(outsideActionDir, 'echo.ts'), resolve(outsideFileActionDir, 'echo.ts'));
+
+    const microsoftExcelActionDir = resolve(integrationsDir, 'microsoft-excel-oauth2-cc', 'actions');
+    mkdirSync(microsoftExcelActionDir, { recursive: true });
+    writeFileSync(resolve(microsoftExcelActionDir, 'get-user-drive.ts'), getUserDriveActionTemplate);
+    writeFileSync(resolve(microsoftExcelActionDir, 'list-users.ts'), graphCursorTemplate);
+    symlinkSync('microsoft-excel-oauth2-cc', resolve(integrationsDir, 'microsoft-excel'), 'dir');
+
+    const openaiActionDir = resolve(integrationsDir, 'openai', 'actions');
     mkdirSync(openaiActionDir, { recursive: true });
     writeFileSync(resolve(openaiActionDir, 'create-image.ts'), imageActionTemplate);
 
@@ -322,6 +593,120 @@ export default createAction({
     ]);
   });
 
+  it('widens response-side enums, cloning schemas the response shares with the input side', async () => {
+    const actionDir = resolve(packageRoot, '.templates/integrations/shared-enum-provider/actions');
+    mkdirSync(actionDir, { recursive: true });
+    writeFileSync(
+      resolve(actionDir, 'round-trip.ts'),
+      `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const StatusSchema = z.object({
+  state: z.enum(['open', 'closed']).optional(),
+});
+
+const InputSchema = z.object({ item: StatusSchema });
+const OutputSchema = z.object({
+  item: StatusSchema.extend({ note: z.string().optional() }),
+  kind: z.enum(['a', 'b']).optional(),
+});
+
+const action = createAction({
+  description: 'Round-trip an item whose status schema is shared with the input side.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const response = await nango.post({ endpoint: '/items', data: input });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`,
+    );
+    writeFileSync(
+      resolve(actionDir, 'multi-decl.ts'),
+      `import { z } from 'zod';
+import { createAction } from 'nango';
+
+const StatusSchema = z.object({ state: z.enum(['open', 'closed']).optional() }),
+  LabelSchema = z.object({ label: z.string() });
+
+const InputSchema = z.object({ item: StatusSchema, tag: LabelSchema });
+const OutputSchema = z.object({ item: StatusSchema, tag: LabelSchema });
+
+const action = createAction({
+  description: 'Round-trip schemas declared in one multi-declaration statement.',
+  version: '1.0.0',
+  input: InputSchema,
+  output: OutputSchema,
+  scopes: [],
+  exec: async (nango, input): Promise<z.infer<typeof OutputSchema>> => {
+    const response = await nango.post({ endpoint: '/items', data: input });
+    return OutputSchema.parse(response.data);
+  },
+});
+
+export default action;
+`,
+    );
+
+    await addProvider({
+      providerId: 'shared-enum-provider',
+      localId: 'shared-enum-provider',
+      yes: true,
+      expectedTemplateSha: templateSha,
+    });
+
+    const generatedTool = readFileSync(
+      resolve(packageRoot, 'src/providers/shared-enum-provider/tools/round-trip.ts'),
+      'utf8',
+    );
+    // The input-side declaration stays strict; the response side references a
+    // widened clone so a new provider value never rejects a valid response.
+    const originalDecl = generatedTool.slice(
+      generatedTool.indexOf('const StatusSchema ='),
+      generatedTool.indexOf('const StatusSchemaWidened'),
+    );
+    expect(originalDecl).toMatch(/z\.enum\(\[["']open["'], ["']closed["']\]\)/);
+    expect(originalDecl).not.toContain('.or(z.string())');
+    const cloneStart = generatedTool.indexOf('const StatusSchemaWidened');
+    const cloneEnd = generatedTool.indexOf('const InputSchema', cloneStart);
+    const cloneDecl = generatedTool.slice(cloneStart, cloneEnd);
+    expect(cloneDecl).toContain('.or(z.string())');
+    expect(generatedTool).toContain('item: StatusSchema ');
+    expect(generatedTool).toContain('StatusSchemaWidened.extend(');
+    expect(generatedTool).toMatch(/kind: z\s*\.enum\(\[["']a["'], ["']b["']\]\)\s*\.or\(z\.string\(\)\)/);
+
+    // A statement declaring several schemas clones as a unit: every
+    // declaration is renamed so the clone never redeclares a sibling.
+    const multiDeclTool = readFileSync(
+      resolve(packageRoot, 'src/providers/shared-enum-provider/tools/multi-decl.ts'),
+      'utf8',
+    );
+    expect(multiDeclTool).toContain('StatusSchemaWidened');
+    expect(multiDeclTool).toContain('LabelSchemaWidened');
+    const labelDeclarations = multiDeclTool.match(/\bLabelSchema\s*=/g) ?? [];
+    expect(labelDeclarations).toHaveLength(1);
+  });
+
+  it('pins Graph next-page cursors when generating from the delegated provider alias', async () => {
+    await addProvider({
+      providerId: 'microsoft-excel',
+      localId: 'microsoft-excel',
+      yes: true,
+      expectedTemplateSha: templateSha,
+    });
+
+    const generated = readFileSync(resolve(packageRoot, 'src/providers/microsoft-excel/tools/list-users.ts'), 'utf8');
+    expect(generated).toContain('inputSchema: listUsersInputSchemaChecked,');
+    expect(generated).toContain('export const listUsersInputSchemaChecked = listUsersInputSchema.extend({');
+    expect(generated).toMatch(/cursor: listUsersInputSchema\.shape\["cursor"\]\s*\.unwrap\(\)\s*\.regex\(/);
+    expect(generated).not.toContain('.refine(');
+  });
+
   it('adds model-native image output to the OpenAI image generation tool', async () => {
     await addProvider({ providerId: 'openai', localId: 'openai', yes: true, expectedTemplateSha: templateSha });
 
@@ -338,7 +723,95 @@ export default createAction({
     expect(listProviders({ installedOnly: false, search: 'custom' })).toEqual([
       'first-provider (1 action templates) [installed as custom]',
     ]);
-    expect(listProviders({ installedOnly: false, search: 'second' })).toEqual(['second-provider (6 action templates)']);
+    expect(listProviders({ installedOnly: false, search: 'second' })).toEqual([
+      'second-provider (14 action templates)',
+    ]);
+  });
+
+  it('discovers and generates providers exposed as template symlinks', async () => {
+    expect(listProviders({ installedOnly: false, search: 'first-provider-alias' })).toEqual([
+      'first-provider-alias (1 action templates)',
+    ]);
+
+    await addProvider({
+      providerId: 'first-provider-alias',
+      localId: 'first-provider-alias',
+      yes: true,
+      expectedTemplateSha: templateSha,
+    });
+
+    const manifest = JSON.parse(
+      readFileSync(resolve(packageRoot, 'src/providers/first-provider-alias/.manifest.json'), 'utf8'),
+    ) as { providerId: string; localId: string; toolCount: number };
+    expect(manifest).toMatchObject({
+      providerId: 'first-provider-alias',
+      localId: 'first-provider-alias',
+      toolCount: 1,
+    });
+  });
+
+  it('rejects template symlinks that resolve outside the template checkout', async () => {
+    expect(listProviders({ installedOnly: false, search: 'outside-provider-alias' })).toEqual([]);
+    await expect(
+      addProvider({
+        providerId: 'outside-provider-alias',
+        localId: 'outside-provider-alias',
+        yes: true,
+        expectedTemplateSha: templateSha,
+      }),
+    ).rejects.toThrow("Unknown template provider 'outside-provider-alias'");
+  });
+
+  it('rejects template action directories and files that resolve outside the template checkout', async () => {
+    expect(listProviders({ installedOnly: false, search: 'outside-actions-provider' })).toEqual([]);
+    await expect(
+      addProvider({
+        providerId: 'outside-file-provider',
+        localId: 'outside-file-provider',
+        yes: true,
+        expectedTemplateSha: templateSha,
+      }),
+    ).rejects.toThrow(
+      "Action template 'outside-file-provider/actions/echo.ts' resolves outside the template checkout.",
+    );
+    expect(existsSync(resolve(packageRoot, 'src/providers/outside-file-provider'))).toBe(false);
+  });
+
+  it('adapts shared Office templates for delegated OAuth without changing client-credentials providers', async () => {
+    await addProvider({
+      providerId: 'microsoft-excel',
+      localId: 'microsoft-excel',
+      yes: true,
+      expectedTemplateSha: templateSha,
+    });
+    await addProvider({
+      providerId: 'microsoft-excel-oauth2-cc',
+      localId: 'microsoft-excel-oauth2-cc',
+      yes: true,
+      expectedTemplateSha: templateSha,
+    });
+
+    const delegatedTool = readFileSync(
+      resolve(packageRoot, 'src/providers/microsoft-excel/tools/get-user-drive.ts'),
+      'utf8',
+    );
+    expect(delegatedTool).toMatch(/userId:\s*z\s*\.string\(\)\s*\.min\(1\)\s*\.optional\(\)\s*\.describe/);
+    expect(delegatedTool).toMatch(
+      /endpoint: input\.userId\s*\? `\/v1\.0\/users\/\$\{encodeURIComponent\(input\.userId\)\}\/drive`\s*: ["']\/v1\.0\/me\/drive["']/,
+    );
+    expect(delegatedTool).toContain(
+      "Get the connected user's OneDrive, or another user's drive when userId is provided.",
+    );
+
+    const clientCredentialsTool = readFileSync(
+      resolve(packageRoot, 'src/providers/microsoft-excel-oauth2-cc/tools/get-user-drive.ts'),
+      'utf8',
+    );
+    expect(clientCredentialsTool).toMatch(
+      /userId: z\.string\(\)\.describe\(["']User ID or user principal name\.["']\)/,
+    );
+    expect(clientCredentialsTool).toContain('endpoint: `/v1.0/users/${encodeURIComponent(input.userId)}/drive`');
+    expect(clientCredentialsTool).not.toContain("'/v1.0/me/drive'");
   });
 
   it('rewrites proxy request types and skips actions the platform proxy cannot execute', async () => {
@@ -370,23 +843,83 @@ export default createAction({
     );
     expect(inlineContextTool).toContain('platformProxy: PlatformProxy,');
     expect(inlineContextTool).not.toContain('typeof action');
-    expect(existsSync(resolve(packageRoot, 'src/providers/second-provider/tools/unsupported-no-proxy.ts'))).toBe(false);
-    expect(existsSync(resolve(packageRoot, 'src/providers/second-provider/tools/unsupported-response-type.ts'))).toBe(
-      false,
+
+    // Only reads of `credentials` on the getConnection() result opt into the
+    // credential-fetching variant; a `credentials` input field does not.
+    const connectionCredentialsTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/connection-credentials.ts'),
+      'utf8',
     );
+    expect(connectionCredentialsTool).toContain('await platformProxy.getConnectionWithCredentials()');
+    expect(connectionCredentialsTool).not.toContain('platformProxy.getConnection()');
+    const inputCredentialsTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/input-credentials.ts'),
+      'utf8',
+    );
+    expect(inputCredentialsTool).toContain('await platformProxy.getConnection()');
+    expect(inputCredentialsTool).not.toContain('getConnectionWithCredentials');
+    // A shadowing callback parameter named like the connection binding must
+    // not count as a credentials read.
+    const shadowedCredentialsTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/shadowed-credentials.ts'),
+      'utf8',
+    );
+    expect(shadowedCredentialsTool).toContain('await platformProxy.getConnection()');
+    expect(shadowedCredentialsTool).not.toContain('getConnectionWithCredentials');
+    // A parenthesized `getConnection()` call still counts as a credentials
+    // read and gets the credential-fetching rewrite.
+    const parenthesizedCredentialsTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/parenthesized-credentials.ts'),
+      'utf8',
+    );
+    expect(parenthesizedCredentialsTool).toContain('platformProxy.getConnectionWithCredentials()');
+    expect(parenthesizedCredentialsTool).not.toMatch(/platformProxy\.getConnection\(\)/);
+    expect(existsSync(resolve(packageRoot, 'src/providers/second-provider/tools/unsupported-no-proxy.ts'))).toBe(false);
+    // Binary responses (responseType: 'arraybuffer') are supported by the
+    // platform proxy, so the fixture generates a tool that preserves the
+    // option verbatim for the runtime to honor.
+    const arrayBufferTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/arraybuffer-response-type.ts'),
+      'utf8',
+    );
+    expect(arrayBufferTool).toMatch(/responseType:\s*['"]arraybuffer['"]/);
+
+    const genericTypedRequestTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/generic-typed-request.ts'),
+      'utf8',
+    );
+    expect(genericTypedRequestTool).toContain('await platformProxy.get<unknown>');
+
+    const genericProxyRequestTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/generic-proxy-request.ts'),
+      'utf8',
+    );
+    expect(genericProxyRequestTool).toContain('await platformProxy.proxy({');
+    expect(genericProxyRequestTool).toMatch(/responseType:\s*['"]arraybuffer['"]/);
+
+    const randomUuidImportTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/random-uuid-import.ts'),
+      'utf8',
+    );
+    expect(randomUuidImportTool).toContain('const randomUUID = () => globalThis.crypto.randomUUID();');
+    expect(randomUuidImportTool).not.toContain("from 'crypto'");
+
+    // A template that only pages through `nango.paginate` counts as calling
+    // the provider proxy and generates against the runtime paginate helper.
+    const paginateTool = readFileSync(
+      resolve(packageRoot, 'src/providers/second-provider/tools/paginate-only.ts'),
+      'utf8',
+    );
+    expect(paginateTool).toContain('platformProxy.paginate<{ id: string }>(config)');
 
     const manifest = JSON.parse(
       readFileSync(resolve(packageRoot, 'src/providers/second-provider/.manifest.json'), 'utf8'),
     ) as { toolCount: number; skippedActions: { action: string; reason: string }[] };
-    expect(manifest.toolCount).toBe(4);
+    expect(manifest.toolCount).toBe(13);
     expect(manifest.skippedActions).toEqual([
       {
         action: 'unsupported-no-proxy',
         reason: 'exec does not call the provider proxy',
-      },
-      {
-        action: 'unsupported-response-type',
-        reason: 'exec uses unsupported proxy options: responseType',
       },
     ]);
   });
@@ -441,7 +974,7 @@ export default createAction({
     expect(providerIndex).not.toContain('.stale.generate-123');
     expect(listProviders({ installedOnly: true })).toEqual([
       'local <- first-provider (1 tools, 0 skipped)',
-      'other <- second-provider (4 tools, 2 skipped)',
+      'other <- second-provider (13 tools, 1 skipped)',
     ]);
   });
 
