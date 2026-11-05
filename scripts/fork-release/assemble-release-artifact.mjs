@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { GateError, readJson, redactOutput, schemaFindings, sha256 } from './lib.mjs';
+import { GateError, packWorkspacePackage, readJson, redactOutput, schemaFindings, sha256 } from './lib.mjs';
 
 const EXPECTED_NODE = '22.23.1';
 const EXPECTED_PNPM = '11.21.0';
@@ -313,21 +313,15 @@ try {
   for (const name of packageNames) {
     const project = byName.get(name);
     const before = new Set(readdirSync(tarballDirectory));
-    const result = spawnSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
-      cwd: project.path,
-      env: {
-        HOME: process.env.HOME ?? root,
-        LANG: 'C',
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
-        npm_config_ignore_scripts: 'true',
-      },
-      encoding: 'utf8',
-      timeout: 180_000,
-      maxBuffer: 256 * 1024,
+    const result = packWorkspacePackage(project.path, tarballDirectory, {
+      HOME: process.env.HOME ?? root,
+      LANG: 'C',
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      npm_config_ignore_scripts: 'true',
     });
     if (result.error || result.status !== 0) {
       throw new GateError(`Packing failed for ${name}`, [
-        redactOutput(`${result.stdout ?? ''}\n${result.stderr ?? ''}`),
+        redactOutput(`${result.error?.message ?? ''}\n${result.stderr ?? ''}`),
       ]);
     }
     const created = readdirSync(tarballDirectory).filter(file => file.endsWith('.tgz') && !before.has(file));

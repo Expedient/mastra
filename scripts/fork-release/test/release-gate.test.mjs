@@ -10,6 +10,7 @@ import {
   GateError,
   canonicalRepositoryPath,
   extractActiveModuleSpecifiers,
+  packWorkspacePackage,
   parseCapture,
   readJson,
   redactOutput,
@@ -524,6 +525,48 @@ test('commercial audit binds all seventeen records, complete discovery, snippets
 test('upstream sync accepts the immutable reviewed base and rejects mutable expressions', () => {
   assert.deepEqual(verifyUpstreamSync(repoRoot, head), []);
   assert.throws(() => verifyUpstreamSync(repoRoot, 'HEAD'), /exact lowercase 40-hex commit/);
+});
+
+test('large workspace package inventories do not overflow the pack subprocess', () => {
+  const root = temporaryDirectory();
+  const project = path.join(root, 'package');
+  const dist = path.join(project, 'dist');
+  const tarballDirectory = path.join(root, 'tarballs');
+  mkdirSync(dist, { recursive: true });
+  mkdirSync(tarballDirectory, { recursive: true });
+  writeJson(path.join(project, 'package.json'), { name: 'mastra', version: '1.0.0', files: ['dist'] });
+  const fileNames = Array.from(
+    { length: 3000 },
+    (_, index) => `${String(index).padStart(4, '0')}-${'x'.repeat(100)}.js`,
+  );
+  for (const fileName of fileNames) writeFileSync(path.join(dist, fileName), 'export default 1;\n');
+
+  const env = {
+    HOME: process.env.HOME ?? root,
+    LANG: 'C',
+    PATH: process.env.PATH ?? '/usr/bin:/bin',
+    npm_config_ignore_scripts: 'true',
+  };
+  const dryRun = spawnSync('pnpm', ['pack', '--dry-run', '--pack-destination', tarballDirectory], {
+    cwd: project,
+    env,
+    encoding: 'utf8',
+    timeout: 180_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  assert.ok(dryRun.stdout.length > 256 * 1024, `fixture listing was only ${dryRun.stdout.length} bytes`);
+
+  const result = packWorkspacePackage(project, tarballDirectory, env);
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr);
+  const entries = execFileSync('tar', ['-tzf', path.join(tarballDirectory, 'mastra-1.0.0.tgz')], {
+    encoding: 'utf8',
+  })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  assert.equal(entries.filter(entry => entry.startsWith('package/dist/')).length, fileNames.length);
+  assert.ok(entries.includes('package/package.json'));
 });
 
 test('artifact assembly rejects a dirty release checkout before packing', () => {

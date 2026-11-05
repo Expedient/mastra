@@ -59,6 +59,17 @@ export class GateError extends Error {
   }
 }
 
+export function packWorkspacePackage(projectPath, tarballDirectory, env) {
+  return spawnSync('pnpm', ['pack', '--pack-destination', tarballDirectory], {
+    cwd: projectPath,
+    env,
+    encoding: 'utf8',
+    timeout: 180_000,
+    maxBuffer: 256 * 1024,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+}
+
 export function readJson(file) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
