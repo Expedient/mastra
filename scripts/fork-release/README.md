@@ -18,7 +18,7 @@ node scripts/fork-release/assemble-release-artifact.mjs \
   --output release/fork-npm-artifacts.tgz \
   --provenance release/fork-provenance.json \
   --name @expedient/mastra-native \
-  --version 0.1.0-expedient.1 \
+  --version 0.1.0-expedient.3 \
   --reviewed-baseline-commit <exact-reviewed-baseline-40-hex-commit> \
   --release-commit <exact-clean-HEAD-40-hex-commit>
 ```
@@ -28,7 +28,7 @@ The command fails closed unless the release commit is the clean checked-out `HEA
 After accountable publication, the expected coordinate is:
 
 ```text
-@expedient/mastra-native@0.1.0-expedient.1
+@expedient/mastra-native@0.1.0-expedient.3
 outer SHA-256: <digest emitted by assemble-release-artifact.mjs>
 ```
 

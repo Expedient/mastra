@@ -468,11 +468,15 @@ export interface RunApprovalScenarioOptions extends Pick<
   | 'instructions'
   | 'stopWhen'
   | 'requireToolApproval'
+  | 'workspace'
+  | 'hooks'
   | 'engine'
   | 'observability'
   | 'afterStream'
 > {
   tracingOptions?: TracingOptions;
+  /** Agent-level hooks stay configured when an approval suspends and resumes the run. */
+  agentHooks?: ToolHooks;
   /**
    * Decide whether to approve (`true`) or decline (`false`) each suspended tool
    * call. Called once per approval, in order. `approvalIndex` is the 0-based

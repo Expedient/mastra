@@ -145,7 +145,7 @@ import { createTool } from '../tools';
 import { createWebSearchProviderTool, isWebSearchTool, normalizeWebSearchProvider } from '../tools/builtin/web-search';
 import { normalizeToolPayloadTransformPolicy } from '../tools/payload-transform';
 import type { ToolToConvert } from '../tools/tool-builder/builder';
-import { isMastraTool, isProviderTool, isApprovalExempt, markApprovalExempt } from '../tools/toolchecks';
+import { isMastraTool, isProviderTool } from '../tools/toolchecks';
 import type {
   CoreTool,
   MastraToolInvocationOptions,
@@ -4814,7 +4814,7 @@ export class Agent<
           ...observabilityContext,
           model: await getModel(),
           tracingPolicy: this.#options?.tracingPolicy,
-          requireApproval: false, // Skill tools never require approval
+          requireApproval: false, // Skills are automatic unless a global policy requests approval
           backgroundConfig: (toolObj as any).background,
           agentBackgroundConfig: this.#backgroundTasks,
           workspace,
@@ -4826,8 +4826,6 @@ export class Agent<
           autoResumeSuspendedTools,
           backgroundTaskEnabled,
         );
-        // Exempt from a global `requireToolApproval` too, not just tool-level approval.
-        markApprovalExempt(convertedToCoreTool);
         convertedSkillTools[toolName] = convertedToCoreTool;
       }
     }
@@ -7538,8 +7536,6 @@ export class Agent<
         return output;
       },
     };
-    // The spread drops the non-enumerable exemption marker.
-    if (isApprovalExempt(tool)) markApprovalExempt(wrapped);
     return wrapped;
   }
 

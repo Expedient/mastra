@@ -152,6 +152,7 @@ async function buildScenarioAgent({
   instructions,
   memory,
   workspace,
+  agentHooks,
   agents,
   workflows,
   agentBackgroundTasks,
@@ -171,7 +172,7 @@ async function buildScenarioAgent({
   maxRetries,
   inputProcessorsOnAgent,
   agentOutputProcessors,
-}: { inputProcessorsOnAgent?: boolean } & Pick<
+}: { inputProcessorsOnAgent?: boolean; agentHooks?: RunLoopScenarioOptions['hooks'] } & Pick<
   RunLoopScenarioOptions,
   | 'llm'
   | 'tools'
@@ -235,6 +236,7 @@ async function buildScenarioAgent({
         ...(signals ? { signals } : {}),
         ...(memory ? { memory } : {}),
         ...(workspace ? { workspace } : {}),
+        ...(agentHooks ? { hooks: agentHooks } : {}),
         ...(agents ? { agents } : {}),
         ...(workflows ? { workflows } : {}),
         ...(agentBackgroundTasks ? { backgroundTasks: agentBackgroundTasks } : {}),
@@ -258,6 +260,7 @@ async function buildScenarioAgent({
       ...(signals ? { signals } : {}),
       ...(memory ? { memory } : {}),
       ...(workspace ? { workspace } : {}),
+      ...(agentHooks ? { hooks: agentHooks } : {}),
       ...(agents ? { agents } : {}),
       ...(workflows ? { workflows } : {}),
       ...(agentBackgroundTasks ? { backgroundTasks: agentBackgroundTasks } : {}),
@@ -687,6 +690,9 @@ export async function runApprovalScenario({
   prompt,
   tools,
   instructions,
+  workspace,
+  agentHooks,
+  hooks,
   stopWhen,
   decision,
   requireToolApproval = true,
@@ -697,7 +703,15 @@ export async function runApprovalScenario({
 }: RunApprovalScenarioOptions): Promise<LoopScenarioResult & { chunks: ChunkType[]; approvals: string[] }> {
   fixtures(llm);
 
-  const { agent } = await buildScenarioAgent({ llm, tools, instructions, engine, observability });
+  const { agent } = await buildScenarioAgent({
+    llm,
+    tools,
+    instructions,
+    workspace,
+    agentHooks,
+    engine,
+    observability,
+  });
   const isDurable = isDurableEngineVariant(engine);
 
   const chunks: ChunkType[] = [];
@@ -710,6 +724,7 @@ export async function runApprovalScenario({
 
   let run = (await agent.stream(prompt, {
     tracingOptions,
+    ...(hooks ? { hooks } : {}),
     ...(requireToolApproval !== false ? { requireToolApproval } : {}),
     ...(stopWhen ? { stopWhen } : {}),
     // Durable needs maxSteps as a fallback when stopWhen is the only bound.
