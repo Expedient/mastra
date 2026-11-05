@@ -13,7 +13,7 @@ import { useAuthCapabilities } from './use-auth-capabilities';
  * (`GET /auth/permission-patterns`).
  *
  * The server owns the permission source of truth (generated from the route
- * registry), so the browser never imports the server-only `@mastra/core/auth/ee`
+ * registry), so the browser never imports server-side permission implementation
  * code just to validate hardcoded route-permission literals.
  *
  * The request only fires when RBAC is actually enabled — when auth is off or
